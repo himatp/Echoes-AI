@@ -17,7 +17,7 @@
     "docx": "^9.0.2",
     "framer-motion": "^11.11.10",
     "lucide-react": "^0.453.0",
-    "next": "14.2.15",
+    "next": "^14.2.35",
     "nodemailer": "^9.0.5",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",

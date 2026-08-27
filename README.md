@@ -1,7 +1,5 @@
 # Echoes — AI-Powered Meeting Notes & Task Generator
 
-> Built for the **GLS Nexus Hackathon 2026**
-
 Echoes transforms live and uploaded meeting audio into structured notes, speaker-attributed transcripts, actionable tasks, and real-time meeting health metrics. Built with Next.js 14, Supabase, Google Gemini, and AssemblyAI, Echoes bridges the gap between raw conversation and actionable team execution.
 
 ---
@@ -122,9 +120,7 @@ Echoes addresses meeting fatigue and lost action items by automatically capturin
 
 ---
 
-## Demo & Screenshots
-
-> *Placeholder: Add repository screenshots and a demonstration GIF prior to final hackathon submission.*
+## Demo & Screenshotss
 
 - **Dashboard & Velocity Overview**: `[Dashboard Screenshot]`
 - **Meeting Processing & Diarization**: `[Meeting Detail Screenshot]`
@@ -133,8 +129,6 @@ Echoes addresses meeting fatigue and lost action items by automatically capturin
 ---
 
 ## Known Limitations
-
-This repository represents a hackathon submission built for the **GLS Nexus Hackathon 2026**:
 
 - **Row Level Security (RLS)**: Core tables use Supabase Auth for security; extended RLS policies are simplified for demonstration flexibility during evaluation.
 - **Google OAuth Consent**: Google Sign-In and Google Calendar consent screens currently reference the default Supabase project domain (`supabase.co`) rather than a custom branded domain.
