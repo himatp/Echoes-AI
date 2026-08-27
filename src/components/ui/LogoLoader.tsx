@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Mic, CheckSquare, Video, Users, FileText, Activity } from "lucide-react";
+import AmbientIcons from "@/components/ui/AmbientIcons";
 
 interface LogoLoaderProps {
   size?: "sm" | "md" | "lg" | "fullscreen";
@@ -91,14 +91,14 @@ export default function LogoLoader({ size = "md", label, onComplete }: LogoLoade
     },
   };
 
-  // FULLSCREEN REFINED TEXT SPLASH SCENE (1.5s TOTAL TIMING)
+  // FULLSCREEN REFINED TEXT SPLASH SCENE
   return (
     <div className="fixed inset-0 z-[9999] bg-zinc-950 text-white flex flex-col items-center justify-center overflow-hidden selection:bg-indigo-500">
       
       {/* Soft Centered Radial Indigo Glow Behind Text */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] sm:w-[600px] sm:h-[600px] bg-gradient-to-tr from-indigo-900/20 via-indigo-950/10 to-transparent rounded-full blur-[130px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] sm:w-[600px] sm:h-[600px] bg-gradient-to-tr from-indigo-900/20 via-indigo-950/10 to-transparent rounded-full blur-[100px] sm:blur-[130px] pointer-events-none" />
 
-      {/* AMBIENT BACKGROUND ELEMENTS (Sequenced to fade in at 0.5s) */}
+      {/* AMBIENT BACKGROUND ELEMENTS (Sequenced to fade in at 0.8s) */}
       {showAmbient && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -106,73 +106,27 @@ export default function LogoLoader({ size = "md", label, onComplete }: LogoLoade
           transition={{ duration: 0.8 }}
           className="absolute inset-0 pointer-events-none overflow-hidden"
         >
-          {/* Floating Product Feature Icons (Low Opacity 10-12%, Slow Independent Drift) */}
-          <motion.div
-            animate={{ x: [-8, 8, -8], y: [-12, 10, -12] }}
-            transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute top-16 left-12 text-indigo-400 opacity-10 hidden sm:block"
-          >
-            <Mic className="w-9 h-9" />
-          </motion.div>
+          {/* Shared Ambient Floating Icons (Icons only) */}
+          <AmbientIcons />
 
-          <motion.div
-            animate={{ x: [10, -10, 10], y: [-8, 14, -8] }}
-            transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute top-20 right-16 text-indigo-400 opacity-12 hidden sm:block"
-          >
-            <CheckSquare className="w-10 h-10" />
-          </motion.div>
-
-          <motion.div
-            animate={{ x: [-12, 10, -12], y: [10, -10, 10] }}
-            transition={{ duration: 28, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute bottom-24 left-16 text-indigo-400 opacity-10 hidden sm:block"
-          >
-            <Video className="w-9 h-9" />
-          </motion.div>
-
-          <motion.div
-            animate={{ x: [8, -12, 8], y: [-14, 8, -14] }}
-            transition={{ duration: 24, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute bottom-28 right-20 text-indigo-400 opacity-12 hidden sm:block"
-          >
-            <Users className="w-10 h-10" />
-          </motion.div>
-
-          <motion.div
-            animate={{ x: [-10, 8, -10], y: [-6, 10, -6] }}
-            transition={{ duration: 30, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute top-1/2 left-8 -translate-y-1/2 text-indigo-400 opacity-10 hidden lg:block"
-          >
-            <FileText className="w-8 h-8" />
-          </motion.div>
-
-          <motion.div
-            animate={{ x: [12, -8, 12], y: [8, -12, 8] }}
-            transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute top-1/2 right-10 -translate-y-1/2 text-indigo-400 opacity-12 hidden lg:block"
-          >
-            <Activity className="w-8 h-8" />
-          </motion.div>
-
-          {/* Faded Background Product Feature Phrases (Faint Opacity 6%) */}
-          <div className="absolute top-1/4 left-1/4 text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase hidden md:block">
+          {/* ALL 4 Faded Feature Phrases (Splash Screen Exclusive) */}
+          <div className="absolute top-[18%] left-6 text-[8px] md:top-1/4 md:left-1/4 md:text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase block">
             Live Transcription
           </div>
-          <div className="absolute top-1/3 right-1/4 text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase hidden md:block">
+          <div className="absolute top-[25%] right-5 text-[8px] md:top-1/3 md:right-1/4 md:text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase block">
             Task Extraction
           </div>
-          <div className="absolute bottom-1/3 left-1/3 text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase hidden md:block">
+          <div className="absolute bottom-[27%] left-5 text-[8px] md:bottom-1/3 md:left-1/3 md:text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase block">
             Meeting Health Score
           </div>
-          <div className="absolute bottom-1/4 right-1/3 text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase hidden md:block">
+          <div className="absolute bottom-[20%] right-6 text-[8px] md:bottom-1/4 md:right-1/3 md:text-[11px] font-mono tracking-widest text-zinc-500 opacity-6 uppercase block">
             Multi-tenant RLS
           </div>
         </motion.div>
       )}
 
       {/* CENTRAL REFINED TEXT ANIMATION SCENE */}
-      <div className="relative z-10 flex flex-col items-center justify-center">
+      <div className="relative z-10 flex flex-col items-center justify-center px-4">
         {/* Soft Outer Glow Pulse Container */}
         <motion.div
           initial={{ scale: 1, filter: "brightness(1) drop-shadow(0 0 20px rgba(79,70,229,0.35))" }}

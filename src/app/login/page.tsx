@@ -6,6 +6,7 @@ import { Sparkles, ShieldCheck, Users, ArrowRight, Lock, KeyRound } from 'lucide
 import { useSearchParams } from 'next/navigation';
 
 import LogoLoader from '@/components/ui/LogoLoader';
+import AmbientIcons from '@/components/ui/AmbientIcons';
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -65,6 +66,9 @@ function LoginForm() {
       {/* Dynamic Background Gradients */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/15 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+      {/* Reusable Low-Opacity Ambient Floating Icons (Icons only) */}
+      <AmbientIcons />
 
       <div className="w-full max-w-md relative z-10">
         
@@ -157,11 +161,6 @@ function LoginForm() {
             </div>
           </div>
         </div>
-
-        {/* Footer info */}
-        <p className="text-center text-xs text-zinc-500 mt-6">
-          GLS Nexus Hackathon 2026 • Secure OAuth Identity Layer
-        </p>
 
       </div>
     </div>
