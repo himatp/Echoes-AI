@@ -5,13 +5,13 @@ import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
 import { 
   getStoredTeamMembers, saveTeamMember, deleteTeamMember, 
-  getStoredMeetingGroups, saveMeetingGroup, deleteMeetingGroup, clearDemoTeamData,
+  getStoredMeetingGroups, saveMeetingGroup, deleteMeetingGroup,
   fetchAndHydrateTeamFromSupabase
 } from '@/lib/store/teamStore';
 import { TeamMember, MeetingGroup } from '@/types';
 import { 
   Users, UserPlus, FolderPlus, Mail, Shield, Trash2, Edit2, 
-  Sparkles, CheckCircle2, User, Layers, Info, RefreshCw, ShieldAlert
+  Sparkles, CheckCircle2, User, Layers, Info, ShieldAlert
 } from 'lucide-react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -165,14 +165,6 @@ export default function TeamPage() {
     }
   };
 
-  const handleClearDemoData = () => {
-    if (window.confirm('Remove all default demo contacts and groups? Real members will be kept.')) {
-      clearDemoTeamData();
-      refreshData();
-      showToast('Demo contacts & groups removed!');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-canvas pb-16">
       <Navbar />
@@ -197,14 +189,6 @@ export default function TeamPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full md:w-auto">
-            <button
-              onClick={handleClearDemoData}
-              className="w-full sm:w-auto px-3.5 py-2.5 min-h-[44px] rounded-xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <span>Clear Demo Data</span>
-            </button>
-
             <button
               onClick={() => handleOpenMemberModal()}
               className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-hero flex items-center justify-center gap-2 transition-all active:scale-95"
