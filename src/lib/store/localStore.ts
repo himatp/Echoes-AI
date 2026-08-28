@@ -43,7 +43,10 @@ export function getStoredMeetings(): Meeting[] {
 export async function fetchAndHydrateMeetingsFromSupabase(organizationId?: string): Promise<Meeting[]> {
   if (typeof window === 'undefined') return [];
   const activeOrgId = organizationId || getActiveOrgId();
-  if (!activeOrgId) return [];
+  if (!activeOrgId) {
+    console.warn('[Hydration Warning] Cannot fetch remote meetings from Supabase: No active organization workspace ID configured.');
+    return getStoredMeetings();
+  }
 
   try {
     const remoteMeetings = await fetchMeetingsFromSupabase(activeOrgId);
@@ -77,7 +80,12 @@ export function getMeetingById(id: string): Meeting | undefined {
 export function saveMeeting(meeting: Meeting): void {
   if (typeof window === 'undefined') return;
   const activeOrgId = getActiveOrgId();
-  if (!activeOrgId) return;
+  if (!activeOrgId) {
+    const errMsg = 'Unable to save meeting: No active organization workspace found. Please select or join an organization workspace.';
+    console.error(`[saveMeeting ERROR] ${errMsg}`);
+    alert(`⚠️ ${errMsg}`);
+    throw new Error(errMsg);
+  }
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MEETINGS);
@@ -100,8 +108,9 @@ export function saveMeeting(meeting: Meeting): void {
     
     // Wire real Supabase Table persistence
     syncMeetingToSupabase(scopedMeeting, scopedMeeting.organizationId);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error saving meeting to local storage:', err);
+    throw err;
   }
 }
 

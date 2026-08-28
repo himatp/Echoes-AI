@@ -15,6 +15,7 @@ import { matchSpeakerToMember } from '@/lib/matching/speakerMatcher';
 import { Mic, MicOff, Sparkles, AlertTriangle, CheckCircle2, ArrowRight, FileText, UserCheck, Layers, Plus, Volume2, Check, RefreshCw, Radio, ShieldAlert, Upload, FileAudio, Users, History } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 import LogoLoader from '@/components/ui/LogoLoader';
 
@@ -25,6 +26,7 @@ Marcus Vance: I will handle the Google Calendar sync integration for team meetin
 
 export default function NewMeetingPage() {
   const router = useRouter();
+  const { activeOrg, isLoading: isAuthLoading } = useAuth();
   const [meetingTitle, setMeetingTitle] = useState('Sprint 15 Architecture & Task Allocation');
   const [isRecording, setIsRecording] = useState(false);
   const [transcriptText, setTranscriptText] = useState(DEMO_TRANSCRIPT_DEFAULT);
@@ -869,10 +871,14 @@ export default function NewMeetingPage() {
 
               <button
                 onClick={handleStartPipeline}
-                disabled={isDiarizing || isExtracting}
+                disabled={isDiarizing || isExtracting || isAuthLoading || !activeOrg?.id}
                 className="w-full mt-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-hero flex items-center justify-center gap-2 transition-all min-h-[44px]"
               >
-                {isDiarizing ? (
+                {isAuthLoading ? (
+                  <span>Resolving workspace session...</span>
+                ) : !activeOrg?.id ? (
+                  <span>No Active Workspace — Select/Join Workspace to Save</span>
+                ) : isDiarizing ? (
                   <span>1/2 Transcribing audio & identifying speakers...</span>
                 ) : isExtracting ? (
                   <span>2/2 Generating summaries & tasks...</span>

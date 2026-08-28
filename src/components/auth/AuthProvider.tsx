@@ -121,6 +121,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Safety fallback: Guarantee isLoading resolves to false within 3 seconds max under any network condition
+    const safetyTimer = setTimeout(() => {
+      console.warn('[AuthProvider] Auth session initialization timeout fallback reached. Unlocking app.');
+      setIsLoading(false);
+    }, 3000);
+
     // Clear legacy active org from localStorage if stored
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('echoes_active_org_id');
@@ -129,24 +135,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Initialize Auth Session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    // Initialize Auth Session safely with error handling and finally block
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
 
-      if (session?.user) {
-        const orgs = await loadUserOrganizations(session.user.id);
-        setUserOrgs(orgs);
+        if (session?.user) {
+          try {
+            const orgs = await loadUserOrganizations(session.user.id);
+            setUserOrgs(orgs);
 
-        const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
-        const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
-        setActiveOrg(defaultOrg);
-        if (defaultOrg && typeof window !== 'undefined') {
-          localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+            const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
+            const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
+            setActiveOrg(defaultOrg);
+            if (defaultOrg && typeof window !== 'undefined') {
+              localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+            }
+          } catch (orgErr) {
+            console.warn('[AuthProvider] Failed to load organizations:', orgErr);
+          }
         }
-      }
-      setIsLoading(false);
-    });
+      })
+      .catch((err) => {
+        console.warn('[AuthProvider] Supabase auth session check failed:', err);
+      })
+      .finally(() => {
+        clearTimeout(safetyTimer);
+        setIsLoading(false);
+      });
 
     // Listen for auth changes (sign in, sign out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -155,19 +173,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        const orgs = await loadUserOrganizations(session.user.id);
-        setUserOrgs(orgs);
+        try {
+          const orgs = await loadUserOrganizations(session.user.id);
+          setUserOrgs(orgs);
 
-        const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
-        const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
-        setActiveOrg(defaultOrg);
-        if (defaultOrg && typeof window !== 'undefined') {
-          localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+          const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
+          const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
+          setActiveOrg(defaultOrg);
+          if (defaultOrg && typeof window !== 'undefined') {
+            localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+          }
+        } catch (orgErr) {
+          console.warn('[AuthProvider] Failed to load organizations on auth change:', orgErr);
         }
       } else {
         setUserOrgs([]);
         setActiveOrg(null);
-        if (typeof window !== 'undefined') {
+        // CRITICAL FIX: Only remove active org ID on explicit SIGNED_OUT event!
+        // Do NOT clear on transient INITIAL_SESSION null states during page refresh token hydration.
+        if (event === 'SIGNED_OUT' && typeof window !== 'undefined') {
+          console.log('[AuthProvider] Explicit SIGNED_OUT event. Clearing active org ID from localStorage.');
           localStorage.removeItem('echoes_active_org_id');
         }
       }

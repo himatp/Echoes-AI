@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
 
     const parsed = await safeParseJsonResponse(pollRes);
     if (!parsed.success || !parsed.data) {
-      return NextResponse.json({ success: false, status: 'error', error: parsed.error || 'Failed to poll AssemblyAI' }, { status: 500 });
+      const statusCode = pollRes.status === 404 ? 404 : 400;
+      return NextResponse.json({ success: false, status: 'error', error: parsed.error || 'Failed to poll AssemblyAI' }, { status: statusCode });
     }
 
     const pollingData = parsed.data;
