@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 
 export default function MeetingDetailPage() {
   const router = useRouter();
@@ -200,22 +201,23 @@ export default function MeetingDetailPage() {
         }),
       });
 
-      const data = await res.json();
+      const parsed = await safeParseJsonResponse(res);
       setSyncingTaskId(null);
 
-      if (res.status === 401 || data.requiresAuth) {
+      if (res.status === 401 || parsed.data?.requiresAuth) {
         // Redirect to Google OAuth Consent Flow
         window.location.href = `/api/calendar/auth?returnTo=/meetings/${meetingId}`;
         return;
       }
 
-      if (data.success && data.eventId) {
+      if (parsed.success && parsed.data?.success && parsed.data?.eventId) {
+        const data = parsed.data;
         showToast(`Synced to Google Calendar! Event ID: ${data.eventId}`);
         if (data.htmlLink) {
           window.open(data.htmlLink, '_blank');
         }
       } else {
-        setCalendarAlert(`Calendar sync failed: ${data.error || 'Unknown error'}`);
+        setCalendarAlert(`Calendar sync failed: ${parsed.error || parsed.data?.error || 'Unknown error'}`);
       }
     } catch (err: any) {
       setSyncingTaskId(null);
@@ -240,7 +242,10 @@ export default function MeetingDetailPage() {
         }),
       });
 
-      if (!res.ok) throw new Error(`Export request failed (${res.status})`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Export request failed (${res.status}): ${errText.replace(/<[^>]*>/g, '').trim().slice(0, 150)}`);
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -354,13 +359,15 @@ export default function MeetingDetailPage() {
           body: JSON.stringify(payload),
         });
 
-        const data = await res.json();
-        if (data.success) {
+        const parsed = await safeParseJsonResponse(res);
+        if (parsed.success && parsed.data?.success) {
+          const data = parsed.data;
           successCount++;
           console.log(`[Email Digest Response Success] Delivered to ${data.recipient} (Resend ID: ${data.resendId})`);
         } else {
-          console.warn(`[Email Digest Response Warning] Failed to deliver to ${target.email}:`, data.error);
-          errors.push(`${target.email}: ${data.error}`);
+          const errStr = parsed.error || parsed.data?.error || 'Unknown email delivery error';
+          console.warn(`[Email Digest Response Warning] Failed to deliver to ${target.email}:`, errStr);
+          errors.push(`${target.email}: ${errStr}`);
         }
       }
 

@@ -55,7 +55,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeOrg, setActiveOrg] = useState<Organization | null>(null);
   const [userOrgs, setUserOrgs] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSplashCompleted, setIsSplashCompleted] = useState(false);
+  const [isSplashCompleted, setIsSplashCompleted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('echoes_splash_completed') === 'true';
+    }
+    return false;
+  });
 
   // Helper to fetch user's organizations from Supabase
   const loadUserOrganizations = async (userId: string) => {
@@ -254,6 +259,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         size="fullscreen"
         onComplete={() => {
           console.log('[AuthProvider Hard Gate] Splash screen sequence onComplete fired. Unlocking app render.');
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('echoes_splash_completed', 'true');
+          }
           setIsSplashCompleted(true);
         }}
       />

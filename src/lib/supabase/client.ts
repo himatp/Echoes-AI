@@ -15,13 +15,19 @@ export function getActiveOrgId(): string | null {
 }
 
 // Upload Audio File/Blob to Supabase Storage bucket "meeting-audio"
-export async function uploadAudioToSupabaseStorage(audioBlob: Blob, filename: string): Promise<string | null> {
-  if (!supabase) return null;
+export async function uploadAudioToSupabaseStorage(
+  audioBlob: Blob, 
+  filename: string
+): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
+  if (!supabase) {
+    return { success: false, error: 'Supabase client is not initialized.' };
+  }
   try {
     const bucketName = 'meeting-audio';
-    const filePath = `recordings/${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const cleanFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `recordings/${Date.now()}-${cleanFilename}`;
 
-    console.log(`[Supabase Storage] Uploading ${audioBlob.size} bytes audio payload to bucket "${bucketName}" (${filePath})...`);
+    console.log(`[Supabase Storage] Direct browser upload of ${audioBlob.size} bytes to bucket "${bucketName}" (${filePath})...`);
 
     const { data, error } = await supabase.storage
       .from(bucketName)
@@ -32,15 +38,18 @@ export async function uploadAudioToSupabaseStorage(audioBlob: Blob, filename: st
 
     if (error) {
       console.warn('[Supabase Storage Upload Warning]:', error.message);
-      return null;
+      return { 
+        success: false, 
+        error: `Supabase Storage Upload Error: ${error.message} (Bucket: ${bucketName})` 
+      };
     }
 
     const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(filePath);
     console.log('[Supabase Storage Success] Public Audio URL:', publicUrlData.publicUrl);
-    return publicUrlData.publicUrl;
+    return { success: true, publicUrl: publicUrlData.publicUrl };
   } catch (err: any) {
     console.error('[Supabase Storage Upload Exception]:', err.message);
-    return null;
+    return { success: false, error: `Supabase Storage Upload Exception: ${err.message}` };
   }
 }
 

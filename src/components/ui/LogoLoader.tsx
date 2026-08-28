@@ -24,19 +24,20 @@ export default function LogoLoader({ size = "md", label, onComplete }: LogoLoade
       setShowAmbient(true);
     }, 800);
 
-    // Sequence 2: Hard gate completed trigger at 3.5s total duration (snappy reveal + extended hold)
+    // Sequence 2: Hard gate completed trigger (fast 500ms for reduced motion, 2.5s for normal)
+    const duration = prefersReducedMotion ? 500 : 2500;
     const completeTimer = setTimeout(() => {
       if (onComplete) {
-        console.log("[LogoLoader Splash] 3.5s splash animation & extended hold complete. Firing onComplete hard gate.");
+        console.log(`[LogoLoader Splash] ${duration}ms splash animation complete. Firing onComplete hard gate.`);
         onComplete();
       }
-    }, 3500);
+    }, duration);
 
     return () => {
       clearTimeout(ambientTimer);
       clearTimeout(completeTimer);
     };
-  }, [size, onComplete]);
+  }, [size, onComplete, prefersReducedMotion]);
 
   // REDUCED MOTION ACCESSIBILITY BRANCH
   if (prefersReducedMotion) {

@@ -5,10 +5,11 @@ import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
 import { LiveTimer } from '@/components/ui/LiveTimer';
 import { AudioWaveform } from '@/components/ui/AudioWaveform';
-import { transcribeAudio, processMeetingWithAI } from '@/lib/api/meetingApi';
+import { transcribeAudio, processMeetingWithAI, pollTranscriptionStatus } from '@/lib/api/meetingApi';
 import { saveMeeting, getStoredMeetings } from '@/lib/store/localStore';
 import { getStoredTeamMembers, getStoredMeetingGroups } from '@/lib/store/teamStore';
 import { uploadAudioToSupabaseStorage } from '@/lib/supabase/client';
+import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 import { SpeakerSegment, Meeting, ActionItem, TeamMember, MeetingGroup } from '@/types';
 import { matchSpeakerToMember } from '@/lib/matching/speakerMatcher';
 import { Mic, MicOff, Sparkles, AlertTriangle, CheckCircle2, ArrowRight, FileText, UserCheck, Layers, Plus, Volume2, Check, RefreshCw, Radio, ShieldAlert, Upload, FileAudio, Users, History } from 'lucide-react';
@@ -97,6 +98,7 @@ export default function NewMeetingPage() {
 
   // Pipeline Processing States
   const [isDiarizing, setIsDiarizing] = useState(false);
+  const [diarizeStageLabel, setDiarizeStageLabel] = useState('Transcribing audio & identifying speakers…');
   const [isExtracting, setIsExtracting] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
@@ -200,27 +202,69 @@ export default function NewMeetingPage() {
 
           if (audioBlob.size > 500) {
             setIsDiarizing(true);
-            const formData = new FormData();
-            formData.append('audioFile', audioBlob, 'mic-recording.webm');
+            setDiarizeStageLabel('Uploading recorded audio to storage…');
+
+            // Direct browser-to-Supabase Storage upload (bypasses Vercel 4.5MB function limit)
+            const uploadRes = await uploadAudioToSupabaseStorage(audioBlob, 'mic-recording.webm');
+
+            let reqBody: any;
+            if (uploadRes.success && uploadRes.publicUrl) {
+              reqBody = JSON.stringify({ audioUrl: uploadRes.publicUrl });
+              console.log('[Mic Recorder] Direct Supabase Storage upload success. Audio URL:', uploadRes.publicUrl);
+            } else {
+              // Fallback for smaller recordings (< 3MB) if Supabase storage is unconfigured
+              if (audioBlob.size < 3 * 1024 * 1024) {
+                console.warn('[Mic Recorder] Supabase storage upload warning/fallback, sending formData directly:', uploadRes.error);
+                const formData = new FormData();
+                formData.append('audioFile', audioBlob, 'mic-recording.webm');
+                reqBody = formData;
+              } else {
+                setIsDiarizing(false);
+                setDiarizeError(uploadRes.error || 'Failed to upload audio to storage.');
+                return;
+              }
+            }
+
+            setDiarizeStageLabel('Transcribing audio & identifying speakers…');
 
             try {
+              const isFormData = reqBody instanceof FormData;
               const res = await fetch('/api/audio/transcribe', {
                 method: 'POST',
-                body: formData,
+                headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+                body: reqBody,
               });
 
-              const data = await res.json();
-              setIsDiarizing(false);
+              const parsed = await safeParseJsonResponse(res);
 
-              if (data.success && data.rawText) {
-                setTranscriptText(data.rawText);
-                setIsLiveMicTranscribed(true);
-                setDiarizedEngine(data.engine);
-                setDiarizedSegments(data.segments);
-                if (data.warning) setEngineWarning(data.warning);
+              if (parsed.success && parsed.data?.success) {
+                let data = parsed.data;
+
+                // Handle async job submission (transcriptId) -> Client-side polling
+                if (data.transcriptId && data.status === 'processing') {
+                  setDiarizeStageLabel('Transcribing audio & identifying speakers…');
+                  data = await pollTranscriptionStatus(data.transcriptId, (attempt) => {
+                    setDiarizeStageLabel(`Transcribing audio & identifying speakers… (${attempt * 3}s)`);
+                  });
+                }
+
+                setIsDiarizing(false);
+
+                if (data.success && data.rawText) {
+                  setTranscriptText(data.rawText);
+                  setIsLiveMicTranscribed(true);
+                  setDiarizedEngine(data.engine);
+                  setDiarizedSegments(data.segments);
+                  if (data.warning) setEngineWarning(data.warning);
+                } else {
+                  setDiarizeError(data.error || 'AssemblyAI audio transcription failed.');
+                  if (data.engine) setDiarizedEngine(data.engine);
+                }
               } else {
-                setDiarizeError(data.error || 'AssemblyAI audio transcription failed.');
-                if (data.engine) setDiarizedEngine(data.engine);
+                setIsDiarizing(false);
+                const errText = parsed.error || parsed.data?.error || 'AssemblyAI audio transcription failed.';
+                setDiarizeError(errText);
+                if (parsed.data?.engine) setDiarizedEngine(parsed.data.engine);
               }
             } catch (err: any) {
               setIsDiarizing(false);
@@ -263,28 +307,69 @@ export default function NewMeetingPage() {
     setUploadedFileName(file.name);
     setDiarizeError(null);
     setIsDiarizing(true);
+    setDiarizeStageLabel('Uploading audio file to storage…');
 
-    const formData = new FormData();
-    formData.append('audioFile', file);
+    // Direct browser-to-Supabase Storage upload (bypasses Vercel 4.5MB function limit)
+    const uploadRes = await uploadAudioToSupabaseStorage(file, file.name);
+
+    let reqBody: any;
+    if (uploadRes.success && uploadRes.publicUrl) {
+      reqBody = JSON.stringify({ audioUrl: uploadRes.publicUrl });
+      console.log('[File Upload] Direct Supabase Storage upload success. Audio URL:', uploadRes.publicUrl);
+    } else {
+      // Fallback for smaller audio files (< 3MB) if Supabase storage is unconfigured
+      if (file.size < 3 * 1024 * 1024) {
+        console.warn('[File Upload] Supabase storage upload warning/fallback, sending formData directly:', uploadRes.error);
+        const formData = new FormData();
+        formData.append('audioFile', file);
+        reqBody = formData;
+      } else {
+        setIsDiarizing(false);
+        setDiarizeError(uploadRes.error || 'Failed to upload audio file to storage.');
+        return;
+      }
+    }
+
+    setDiarizeStageLabel('Transcribing audio file with AssemblyAI…');
 
     try {
+      const isFormData = reqBody instanceof FormData;
       const res = await fetch('/api/audio/transcribe', {
         method: 'POST',
-        body: formData,
+        headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+        body: reqBody,
       });
 
-      const data = await res.json();
-      setIsDiarizing(false);
+      const parsed = await safeParseJsonResponse(res);
 
-      if (data.success && data.rawText) {
-        setTranscriptText(data.rawText);
-        setIsLiveMicTranscribed(true);
-        setDiarizedEngine(data.engine);
-        setDiarizedSegments(data.segments);
-        if (data.warning) setEngineWarning(data.warning);
+      if (parsed.success && parsed.data?.success) {
+        let data = parsed.data;
+
+        // Handle async job submission (transcriptId) -> Client-side polling
+        if (data.transcriptId && data.status === 'processing') {
+          setDiarizeStageLabel('Transcribing audio file with AssemblyAI…');
+          data = await pollTranscriptionStatus(data.transcriptId, (attempt) => {
+            setDiarizeStageLabel(`Transcribing audio file with AssemblyAI… (${attempt * 3}s)`);
+          });
+        }
+
+        setIsDiarizing(false);
+
+        if (data.success && data.rawText) {
+          setTranscriptText(data.rawText);
+          setIsLiveMicTranscribed(true);
+          setDiarizedEngine(data.engine);
+          setDiarizedSegments(data.segments);
+          if (data.warning) setEngineWarning(data.warning);
+        } else {
+          setDiarizeError(data.error || 'AssemblyAI audio file transcription failed.');
+          if (data.engine) setDiarizedEngine(data.engine);
+        }
       } else {
-        setDiarizeError(data.error || 'AssemblyAI audio file transcription failed.');
-        if (data.engine) setDiarizedEngine(data.engine);
+        setIsDiarizing(false);
+        const errText = parsed.error || parsed.data?.error || 'AssemblyAI audio file transcription failed.';
+        setDiarizeError(errText);
+        if (parsed.data?.engine) setDiarizedEngine(parsed.data.engine);
       }
     } catch (err: any) {
       setIsDiarizing(false);
@@ -362,12 +447,12 @@ export default function NewMeetingPage() {
 
     // STEP 3: UPLOAD RAW AUDIO BLOB TO SUPABASE STORAGE
     if (rawAudioBlobRef.current) {
-      const audioUrl = await uploadAudioToSupabaseStorage(
+      const uploadRes = await uploadAudioToSupabaseStorage(
         rawAudioBlobRef.current,
         uploadedFileName || 'mic-recording.webm'
       );
-      if (audioUrl) {
-        aiRes.meeting.audioUrl = audioUrl;
+      if (uploadRes.success && uploadRes.publicUrl) {
+        aiRes.meeting.audioUrl = uploadRes.publicUrl;
       }
     }
 
@@ -840,7 +925,7 @@ export default function NewMeetingPage() {
 
               {isDiarizing ? (
                 <div className="p-8 text-center bg-zinc-50 dark:bg-zinc-900/60 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-800 flex items-center justify-center">
-                  <LogoLoader size="md" label="Transcribing audio & identifying speakers…" />
+                  <LogoLoader size="md" label={diarizeStageLabel} />
                 </div>
               ) : diarizedSegments ? (
                 <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
