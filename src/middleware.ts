@@ -2,11 +2,18 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
+
+  // 1. Bypass middleware immediately for all API routes to prevent Edge Middleware timeouts
+  if (path.startsWith('/api')) {
+    return response;
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -37,14 +44,10 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-
-  // Allow public access to login, auth callback, and calendar OAuth endpoints
+  // Allow public access to login and auth callback endpoints
   const isPublicRoute =
     path.startsWith('/login') ||
-    path.startsWith('/auth/callback') ||
-    path.startsWith('/api/calendar/auth') ||
-    path.startsWith('/api/calendar/callback');
+    path.startsWith('/auth/callback');
 
   if (!user && !isPublicRoute) {
     const loginUrl = new URL('/login', request.url);
@@ -67,12 +70,13 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths EXCEPT:
+     * - api/ (API routes - bypass middleware to eliminate MIDDLEWARE_INVOCATION_TIMEOUT)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
+     * - Static images (.svg, .png, .jpg, etc.)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
