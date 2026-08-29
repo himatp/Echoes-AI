@@ -362,13 +362,12 @@ function NewMeetingContent() {
     }
   };
 
-  // Select Local Audio File (Does NOT auto-run pipeline until user clicks "Process Meeting & Save Notes")
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload & Save Stage 1 Draft upon File Selection (Without auto-running AI transcription)
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     rawAudioBlobRef.current = file;
-    activeAudioUrlRef.current = null;
     setUploadedFileName(file.name);
     setDiarizeError(null);
     setAiError(null);
@@ -377,11 +376,24 @@ function NewMeetingContent() {
     setProcessedMeeting(null);
     setDiarizedEngine(null);
 
-    // Auto-fill meeting title if empty
-    if (!meetingTitle.trim()) {
-      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-      setMeetingTitle(cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1));
+    const draftTitle = meetingTitle.trim() || 'Uploaded Audio Meeting';
+
+    setIsDiarizing(true);
+    setDiarizeStageLabel('Saving uploaded audio draft…');
+
+    // 1. Upload audio file to Supabase Storage
+    const uploadRes = await uploadAudioToSupabaseStorage(file, file.name);
+
+    if (uploadRes.success && uploadRes.publicUrl) {
+      activeAudioUrlRef.current = uploadRes.publicUrl;
+      // 2. Auto-save Stage 1 draft with status: 'uploaded' (Appears under "Needs Review" on Dashboard)
+      await autoSaveUploadedStage(uploadRes.publicUrl, draftTitle);
+      console.log('[File Upload] Stage 1 draft saved with status=uploaded. Audio URL:', uploadRes.publicUrl);
+    } else {
+      console.warn('[File Upload] Storage upload fallback:', uploadRes.error);
     }
+
+    setIsDiarizing(false);
   };
 
   // Guaranteed Manual "+ Add Task Fallback" Form Handler

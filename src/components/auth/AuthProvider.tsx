@@ -213,6 +213,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const pathname = usePathname();
+
+  // ROUTE GATING: When splash completes and auth status resolves, redirect unauthenticated users to /login
+  useEffect(() => {
+    if (isMounted && isSplashCompleted && !isLoading && !user) {
+      const publicRoutes = ['/login', '/auth/callback'];
+      const isPublic = publicRoutes.some((route) => pathname?.startsWith(route));
+      if (!isPublic) {
+        console.log('[AuthProvider Gate] Unauthenticated user on protected route:', pathname, '-> Redirecting to /login');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+      }
+    }
+  }, [isMounted, isSplashCompleted, isLoading, user, pathname]);
+
   const switchOrg = (orgId: string) => {
     if (orgId === LEGACY_ORG_ID) return;
     const target = userOrgs.find((o) => o.id === orgId);
