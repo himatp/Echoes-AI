@@ -98,7 +98,18 @@ export default function MeetingsListPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* Stage Status Badge */}
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold tracking-wide ${
+                    mtg.status === 'uploaded'
+                      ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                      : mtg.status === 'draft'
+                      ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  }`}>
+                    {mtg.status === 'uploaded' ? 'Uploaded' : mtg.status === 'draft' ? 'Draft' : 'Completed'}
+                  </span>
+
                   <PillBadge priority={mtg.sentiment === 'positive' ? 'low' : 'high'} label={mtg.sentiment.toUpperCase()} size="sm" />
                   <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
                     Health {mtg.healthScore?.score || 85}/100

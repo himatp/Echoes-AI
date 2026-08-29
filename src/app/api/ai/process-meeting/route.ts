@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, speakerSegments, rawTranscript, language } = body;
+    const { title, speakerSegments, rawTranscript, language, existingMeetingId } = body;
+    const targetMtgId = existingMeetingId || `mtg-${Date.now()}`;
 
     if (!speakerSegments || !Array.isArray(speakerSegments) || speakerSegments.length === 0) {
       return NextResponse.json(
@@ -84,7 +85,7 @@ RETURN STRICT JSON matching this EXACT structure:
 
         // Construct meeting object
         const meetingResult: Meeting = {
-          id: `mtg-${Date.now()}`,
+          id: targetMtgId,
           title: title || 'AI Extracted Meeting',
           date: todayStr,
           duration: `${Math.ceil(speakerSegments.length * 3.5)} min`,
@@ -101,7 +102,7 @@ RETURN STRICT JSON matching this EXACT structure:
           },
           actionItems: (jsonOutput.actionItems || []).map((item: any, idx: number) => ({
             id: `task-${Date.now()}-${idx}`,
-            meetingId: `mtg-${Date.now()}`,
+            meetingId: targetMtgId,
             title: item.title,
             assignee: item.assignee || 'Unassigned',
             priority: item.priority || 'medium',
@@ -112,6 +113,7 @@ RETURN STRICT JSON matching this EXACT structure:
           })),
           language: isNonEnglish ? 'gu' : (jsonOutput.detectedLanguage || language || 'en'),
           originalLanguage: isNonEnglish ? jsonOutput.detectedLanguage : undefined,
+          status: 'draft',
           createdAt: new Date().toISOString(),
         };
 
@@ -130,7 +132,7 @@ RETURN STRICT JSON matching this EXACT structure:
     console.log('[Gemini Engine] Executing deterministic structured fallback extraction...');
 
     const fallbackMeeting: Meeting = {
-      id: `mtg-fallback-${Date.now()}`,
+      id: targetMtgId,
       title: title || 'Diarized Meeting Summary',
       date: todayStr,
       duration: `${Math.max(12, speakerSegments.length * 4)} min`,

@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
-import { getMeetingById, updateTaskStatus, deleteMeeting, saveMeeting } from '@/lib/store/localStore';
+import { getMeetingById, updateTaskStatus, deleteMeeting, saveMeeting, updateMeetingStatus } from '@/lib/store/localStore';
 import { getStoredTeamMembers } from '@/lib/store/teamStore';
 import { Meeting, ActionItem, SpeakerSegment, TeamMember } from '@/types';
 import { 
-  ArrowLeft, Calendar, Clock, UserCheck, Play, Pause, 
+  ArrowLeft, ArrowRight, Calendar, Clock, UserCheck, Play, Pause, 
   Volume2, FastForward, Rewind, Sparkles, Mail, FileText, Video,
   CheckCircle2, Activity, Download, Send, RefreshCw, AlertTriangle, CalendarPlus, ExternalLink, Trash2
 } from 'lucide-react';
@@ -449,10 +449,54 @@ export default function MeetingDetailPage() {
 
             <a
               href={`/api/calendar/auth?returnTo=/meetings/${meetingId}`}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex-shrink-0 shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 flex-shrink-0 transition-colors"
             >
-              Connect Google Calendar
+              <span>Authenticate Google Calendar</span>
+              <ExternalLink className="w-3.5 h-3.5" />
             </a>
+          </div>
+        )}
+
+        {/* Draft / Uploaded Review Banner */}
+        {meeting && (meeting.status === 'draft' || meeting.status === 'uploaded') && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                  {meeting.status === 'uploaded' ? 'Audio Uploaded — Not Processed Yet' : 'Draft Notes — Pending Final Review'}
+                </h3>
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                  {meeting.status === 'uploaded' 
+                    ? 'Audio file is saved. Click below to continue AI transcription & extraction.' 
+                    : 'AI extraction completed automatically. Review notes and mark as completed.'}
+                </p>
+              </div>
+            </div>
+
+            {meeting.status === 'uploaded' ? (
+              <Link
+                href={`/new-meeting?resumeId=${meeting.id}`}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+              >
+                <span>Resume Processing</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            ) : (
+              <button
+                onClick={() => {
+                  updateMeetingStatus(meeting.id, 'completed');
+                  setMeeting({ ...meeting, status: 'completed' });
+                  showToast('Meeting finalized & marked as Completed!');
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Finalize & Mark Completed</span>
+              </button>
+            )}
           </div>
         )}
 

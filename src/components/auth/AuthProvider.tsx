@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { Organization } from '@/types';
@@ -55,12 +56,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeOrg, setActiveOrg] = useState<Organization | null>(null);
   const [userOrgs, setUserOrgs] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSplashCompleted, setIsSplashCompleted] = useState<boolean>(() => {
+  const [isSplashCompleted, setIsSplashCompleted] = useState<boolean>(false);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsMounted(true);
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('echoes_splash_completed') === 'true';
+      const isSplashDone =
+        sessionStorage.getItem('echoes_splash_completed') === 'true' ||
+        window.location.pathname.startsWith('/login');
+      if (isSplashDone) {
+        setIsSplashCompleted(true);
+      }
     }
-    return false;
-  });
+  }, []);
 
   // Helper to fetch user's organizations from Supabase
   const loadUserOrganizations = async (userId: string) => {
@@ -277,8 +286,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Hard gate: Do not mount or render child components until auth is resolved AND splash onComplete has fired
-  if (isLoading || !isSplashCompleted) {
+  // Hard gate: Render initial splash loader on client only if splash sequence has not completed yet
+  // On server/initial hydration pass (isMounted === false), render children directly to guarantee 100% hydration matching
+  if (isMounted && !isSplashCompleted) {
     return (
       <LogoLoader
         size="fullscreen"

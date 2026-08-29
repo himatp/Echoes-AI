@@ -67,6 +67,8 @@ export interface MeetingHealthScore {
   suggestions: string[];
 }
 
+export type MeetingStatus = 'uploaded' | 'draft' | 'completed';
+
 export interface Meeting {
   id: string;
   organizationId?: string;
@@ -83,5 +85,6 @@ export interface Meeting {
   originalLanguage?: string;
   audioUrl?: string;
   attendeeIds?: string[];
+  status?: MeetingStatus;
   createdAt: string;
 }

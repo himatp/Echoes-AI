@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { 
   Mic, LayoutDashboard, CheckSquare, Video, Sun, Moon, Users, 
-  Menu, X, LogOut, UserPlus, Plus 
+  Menu, X, LogOut, UserPlus, Plus, User 
 } from 'lucide-react';
 import { PillBadge } from '../ui/PillBadge';
 import { UserAvatar } from '../ui/UserAvatar';
@@ -129,8 +129,17 @@ export const Navbar: React.FC = () => {
             <span className="sm:hidden">New</span>
           </Link>
 
-          {/* PROFILE CIRCLE TRIGGER & ANCHORED 4-SECTION UNIFIED DROPDOWN */}
-          {user && (
+          {/* PROFILE CIRCLE / SIGN IN TRIGGER */}
+          {!user ? (
+            <Link
+              href="/login"
+              className="flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-xl bg-zinc-100 dark:bg-[#1C1C21] hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-900 dark:text-white text-xs font-bold transition-all border border-zinc-200 dark:border-zinc-800 shadow-sm"
+              title="Sign in to your account"
+            >
+              <User className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+              <span>Sign In</span>
+            </Link>
+          ) : (
             <div className="relative flex items-center" ref={dropdownRef}>
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}

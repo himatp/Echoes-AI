@@ -39,9 +39,9 @@ export default function TaskBoardPage() {
     new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]
   );
 
-  // Load Data
+  // Load Data (only finalized/completed meetings on Task Board!)
   const refreshData = () => {
-    const loadedMeetings = getStoredMeetings();
+    const loadedMeetings = getStoredMeetings().filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
     const loadedTasks = getStoredTasks();
     setMeetings(loadedMeetings);
     setTasks(loadedTasks);
@@ -51,8 +51,9 @@ export default function TaskBoardPage() {
     refreshData();
     if (activeOrg?.id) {
       fetchAndHydrateMeetingsFromSupabase(activeOrg.id).then((hydrated) => {
-        setMeetings(hydrated);
-        setTasks(hydrated.flatMap((m) => m.actionItems || []));
+        const finalizedMeetings = hydrated.filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
+        setMeetings(finalizedMeetings);
+        setTasks(finalizedMeetings.flatMap((m) => m.actionItems || []));
       });
     }
   }, [activeOrg?.id]);

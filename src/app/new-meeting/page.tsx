@@ -1,19 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
 import { LiveTimer } from '@/components/ui/LiveTimer';
 import { AudioWaveform } from '@/components/ui/AudioWaveform';
 import { transcribeAudio, processMeetingWithAI, pollTranscriptionStatus } from '@/lib/api/meetingApi';
-import { saveMeeting, getStoredMeetings } from '@/lib/store/localStore';
+import { saveMeeting, getStoredMeetings, getMeetingById, updateMeetingStatus } from '@/lib/store/localStore';
 import { getStoredTeamMembers, getStoredMeetingGroups } from '@/lib/store/teamStore';
 import { uploadAudioToSupabaseStorage } from '@/lib/supabase/client';
 import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 import { SpeakerSegment, Meeting, ActionItem, TeamMember, MeetingGroup } from '@/types';
 import { matchSpeakerToMember } from '@/lib/matching/speakerMatcher';
 import { Mic, MicOff, Sparkles, AlertTriangle, CheckCircle2, ArrowRight, FileText, UserCheck, Layers, Plus, Volume2, Check, RefreshCw, Radio, ShieldAlert, Upload, FileAudio, Users, History } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/components/auth/AuthProvider';
 
@@ -24,12 +24,12 @@ Alex Kumar: I will take the task to finalize the automated meeting summary & spe
 Priya Patel: I will configure the action item tracking board and verify completion velocity.
 Marcus Vance: I will handle the Google Calendar sync integration for team meetings.`;
 
-export default function NewMeetingPage() {
+function NewMeetingContent() {
   const router = useRouter();
   const { activeOrg, isLoading: isAuthLoading } = useAuth();
-  const [meetingTitle, setMeetingTitle] = useState('Sprint 15 Architecture & Task Allocation');
+  const [meetingTitle, setMeetingTitle] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [transcriptText, setTranscriptText] = useState(DEMO_TRANSCRIPT_DEFAULT);
+  const [transcriptText, setTranscriptText] = useState('');
   const [isLiveMicTranscribed, setIsLiveMicTranscribed] = useState(false);
 
   // Attendees & Meeting Groups State
@@ -94,7 +94,7 @@ export default function NewMeetingPage() {
 
   // Manual Form Inputs
   const [manualTaskInput, setManualTaskInput] = useState('');
-  const [manualTaskAssignee, setManualTaskAssignee] = useState('Alex Kumar');
+  const [manualTaskAssignee, setManualTaskAssignee] = useState('');
   const [manualTaskPriority, setManualTaskPriority] = useState<'urgent' | 'high' | 'medium' | 'low'>('high');
   const [manualTaskSuccessMsg, setManualTaskSuccessMsg] = useState<string | null>(null);
 
@@ -170,6 +170,67 @@ export default function NewMeetingPage() {
   };
 
   const rawAudioBlobRef = useRef<Blob | null>(null);
+  const activeMeetingIdRef = useRef<string | null>(null);
+  const activeAudioUrlRef = useRef<string | null>(null);
+  const searchParams = useSearchParams();
+  const resumeId = searchParams?.get('resumeId');
+  const [resumedMeeting, setResumedMeeting] = useState<Meeting | null>(null);
+
+  // STAGE 1: AUTO-SAVE ON UPLOAD HELPER FUNCTION
+  const autoSaveUploadedStage = async (audioUrl: string, rawTitle?: string) => {
+    const mtgId = activeMeetingIdRef.current || `mtg-${Date.now()}`;
+    activeMeetingIdRef.current = mtgId;
+    activeAudioUrlRef.current = audioUrl;
+
+    const titleToUse = meetingTitle.trim() || rawTitle || `Untitled Recording — ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    const uploadedMeeting: Meeting = {
+      id: mtgId,
+      organizationId: activeOrg?.id,
+      title: titleToUse.replace(/\.[^/.]+$/, ''),
+      date: new Date().toISOString().split('T')[0],
+      duration: '0 min',
+      sentiment: 'neutral',
+      summary: '',
+      keyDecisions: [],
+      actionItems: [],
+      speakerSegments: [],
+      healthScore: { score: 0, talkTimeBalance: 0, decisionDensity: 0, unassignedPenalty: 0, suggestions: [] },
+      language: 'en',
+      status: 'uploaded',
+      audioUrl,
+      createdAt: new Date().toISOString(),
+    };
+
+    console.log(`[Stage 1 Auto-Save] Auto-saving uploaded audio meeting ${mtgId} with status='uploaded'...`);
+    saveMeeting(uploadedMeeting);
+    return uploadedMeeting;
+  };
+
+  const autoTriggeredRef = useRef(false);
+
+  // Handle Resuming an Uploaded Meeting & Automatically Start Processing Pipeline
+  useEffect(() => {
+    if (resumeId && !autoTriggeredRef.current) {
+      const existing = getMeetingById(resumeId);
+      if (existing) {
+        activeMeetingIdRef.current = existing.id;
+        if (existing.audioUrl) activeAudioUrlRef.current = existing.audioUrl;
+        setMeetingTitle(existing.title);
+        setUploadedFileName(existing.title);
+        setResumedMeeting(existing);
+
+        // If meeting is in uploaded or draft state, automatically trigger the processing pipeline!
+        if (existing.status === 'uploaded' || existing.status === 'draft') {
+          autoTriggeredRef.current = true;
+          console.log(`[Auto-Resume Pipeline] Automatically starting processing pipeline for meeting ${existing.id}...`);
+          setTimeout(() => {
+            handleStartPipeline();
+          }, 300);
+        }
+      }
+    }
+  }, [resumeId]);
 
   // Toggle Live Microphone Recording & Real AssemblyAI Audio Upload
   const handleToggleRecording = async () => {
@@ -213,6 +274,7 @@ export default function NewMeetingPage() {
             if (uploadRes.success && uploadRes.publicUrl) {
               reqBody = JSON.stringify({ audioUrl: uploadRes.publicUrl });
               console.log('[Mic Recorder] Direct Supabase Storage upload success. Audio URL:', uploadRes.publicUrl);
+              await autoSaveUploadedStage(uploadRes.publicUrl, meetingTitle || 'Live Mic Recording');
             } else {
               // Fallback for smaller recordings (< 3MB) if Supabase storage is unconfigured
               if (audioBlob.size < 3 * 1024 * 1024) {
@@ -300,82 +362,25 @@ export default function NewMeetingPage() {
     }
   };
 
-  // Upload Local Audio File directly to AssemblyAI
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Select Local Audio File (Does NOT auto-run pipeline until user clicks "Process Meeting & Save Notes")
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     rawAudioBlobRef.current = file;
+    activeAudioUrlRef.current = null;
     setUploadedFileName(file.name);
     setDiarizeError(null);
-    setIsDiarizing(true);
-    setDiarizeStageLabel('Uploading audio file to storage…');
+    setAiError(null);
+    setEngineWarning(null);
+    setDiarizedSegments(null);
+    setProcessedMeeting(null);
+    setDiarizedEngine(null);
 
-    // Direct browser-to-Supabase Storage upload (bypasses Vercel 4.5MB function limit)
-    const uploadRes = await uploadAudioToSupabaseStorage(file, file.name);
-
-    let reqBody: any;
-    if (uploadRes.success && uploadRes.publicUrl) {
-      reqBody = JSON.stringify({ audioUrl: uploadRes.publicUrl });
-      console.log('[File Upload] Direct Supabase Storage upload success. Audio URL:', uploadRes.publicUrl);
-    } else {
-      // Fallback for smaller audio files (< 3MB) if Supabase storage is unconfigured
-      if (file.size < 3 * 1024 * 1024) {
-        console.warn('[File Upload] Supabase storage upload warning/fallback, sending formData directly:', uploadRes.error);
-        const formData = new FormData();
-        formData.append('audioFile', file);
-        reqBody = formData;
-      } else {
-        setIsDiarizing(false);
-        setDiarizeError(uploadRes.error || 'Failed to upload audio file to storage.');
-        return;
-      }
-    }
-
-    setDiarizeStageLabel('Transcribing audio file with AssemblyAI…');
-
-    try {
-      const isFormData = reqBody instanceof FormData;
-      const res = await fetch('/api/audio/transcribe', {
-        method: 'POST',
-        headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
-        body: reqBody,
-      });
-
-      const parsed = await safeParseJsonResponse(res);
-
-      if (parsed.success && parsed.data?.success) {
-        let data = parsed.data;
-
-        // Handle async job submission (transcriptId) -> Client-side polling
-        if (data.transcriptId && data.status === 'processing') {
-          setDiarizeStageLabel('Transcribing audio file with AssemblyAI…');
-          data = await pollTranscriptionStatus(data.transcriptId, (attempt) => {
-            setDiarizeStageLabel(`Transcribing audio file with AssemblyAI… (${attempt * 3}s)`);
-          });
-        }
-
-        setIsDiarizing(false);
-
-        if (data.success && data.rawText) {
-          setTranscriptText(data.rawText);
-          setIsLiveMicTranscribed(true);
-          setDiarizedEngine(data.engine);
-          setDiarizedSegments(data.segments);
-          if (data.warning) setEngineWarning(data.warning);
-        } else {
-          setDiarizeError(data.error || 'AssemblyAI audio file transcription failed.');
-          if (data.engine) setDiarizedEngine(data.engine);
-        }
-      } else {
-        setIsDiarizing(false);
-        const errText = parsed.error || parsed.data?.error || 'AssemblyAI audio file transcription failed.';
-        setDiarizeError(errText);
-        if (parsed.data?.engine) setDiarizedEngine(parsed.data.engine);
-      }
-    } catch (err: any) {
-      setIsDiarizing(false);
-      setDiarizeError('File upload transcribe error: ' + err.message);
+    // Auto-fill meeting title if empty
+    if (!meetingTitle.trim()) {
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      setMeetingTitle(cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1));
     }
   };
 
@@ -416,11 +421,46 @@ export default function NewMeetingPage() {
     setAiError(null);
     setEngineWarning(null);
 
+    // 1. PRE-CHECK VALIDATION: Ensure audio or transcript text is present!
+    if (!rawAudioBlobRef.current && !activeAudioUrlRef.current && !transcriptText.trim()) {
+      setDiarizeError('⚠️ No audio recording, uploaded audio file, or transcript detected. Please record audio via microphone or upload an audio file first before processing.');
+      return;
+    }
+
+    // 2. PRE-CHECK VALIDATION: Ensure Meeting Title is entered!
+    if (!meetingTitle.trim()) {
+      setDiarizeError('⚠️ Meeting Title Missing: Please enter a meeting title in the Meeting Title field before processing.');
+      return;
+    }
+
+    // 3. PRE-CHECK VALIDATION: Ensure at least 1 Expected Attendee is selected!
+    if (selectedAttendeeIds.length === 0) {
+      setDiarizeError('⚠️ Expected Attendees Missing: Please select at least 1 expected meeting attendee before processing.');
+      return;
+    }
+
+    // 4. Upload audio file/blob to storage if not yet uploaded
+    if (rawAudioBlobRef.current && !activeAudioUrlRef.current) {
+      setIsDiarizing(true);
+      setDiarizeStageLabel('Uploading audio file to storage…');
+      const fileName = uploadedFileName || `Meeting_Audio_${Date.now()}.mp3`;
+      const uploadRes = await uploadAudioToSupabaseStorage(rawAudioBlobRef.current, fileName);
+
+      if (uploadRes.success && uploadRes.publicUrl) {
+        activeAudioUrlRef.current = uploadRes.publicUrl;
+        await autoSaveUploadedStage(uploadRes.publicUrl, meetingTitle.trim() || fileName);
+      }
+    }
+
     let segmentsToProcess = diarizedSegments;
 
     if (!segmentsToProcess || segmentsToProcess.length === 0) {
       setIsDiarizing(true);
-      const diarizeRes = await transcribeAudio({ rawText: transcriptText });
+      setDiarizeStageLabel('Transcribing audio & identifying speakers with AssemblyAI…');
+      const diarizeRes = await transcribeAudio({ 
+        rawText: transcriptText,
+        audioUrl: activeAudioUrlRef.current || undefined,
+      });
       setIsDiarizing(false);
 
       if (!diarizeRes.success || !diarizeRes.segments) {
@@ -434,11 +474,28 @@ export default function NewMeetingPage() {
       if (diarizeRes.warning) setEngineWarning(diarizeRes.warning);
     }
 
+    // VALIDATION: Prevent empty audio transcription from proceeding to extraction
+    const totalSpokenLength = (segmentsToProcess || []).reduce((acc, seg) => {
+      const text = seg.text || '';
+      if (!text.includes('[No spoken words detected') && !text.includes('[No audio text')) {
+        return acc + text.trim().length;
+      }
+      return acc;
+    }, 0);
+
+    if (totalSpokenLength < 10) {
+      setDiarizeError('No spoken speech detected in audio file. Please ensure the audio contains audible spoken speech in English or a supported language.');
+      return;
+    }
+
+    const effectiveTitle = meetingTitle.trim() || (uploadedFileName ? uploadedFileName.replace(/\.[^/.]+$/, '') : 'Untitled Meeting');
+
     // STEP 2: GEMINI EXTRACTION
     setIsExtracting(true);
     const aiRes = await processMeetingWithAI({
-      title: meetingTitle,
+      title: effectiveTitle,
       speakerSegments: segmentsToProcess!,
+      existingMeetingId: activeMeetingIdRef.current || undefined,
     });
     setIsExtracting(false);
 
@@ -446,6 +503,9 @@ export default function NewMeetingPage() {
       setAiError(aiRes.error || 'Gemini AI structured extraction failed.');
       return;
     }
+
+    // Ensure title remains user-entered effectiveTitle
+    aiRes.meeting.title = effectiveTitle;
 
     // STEP 3: UPLOAD RAW AUDIO BLOB TO SUPABASE STORAGE
     if (rawAudioBlobRef.current) {
@@ -500,6 +560,19 @@ export default function NewMeetingPage() {
     // Attach selected attendee IDs to meeting record
     aiRes.meeting.attendeeIds = selectedAttendeeIds;
 
+    // STAGE 2: AUTO-SAVE ON EXTRACTION COMPLETE
+    if (activeMeetingIdRef.current) {
+      aiRes.meeting.id = activeMeetingIdRef.current;
+    } else {
+      activeMeetingIdRef.current = aiRes.meeting.id;
+    }
+
+    aiRes.meeting.status = 'draft';
+    if (activeAudioUrlRef.current) {
+      aiRes.meeting.audioUrl = activeAudioUrlRef.current;
+    }
+
+    console.log(`[Stage 2 Auto-Save] Updating existing meeting ${aiRes.meeting.id} with status='draft'...`);
     saveMeeting(aiRes.meeting);
     setProcessedMeeting(aiRes.meeting);
   };
@@ -512,15 +585,60 @@ export default function NewMeetingPage() {
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2.5 sm:gap-3 leading-tight">
               <Mic className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
               <span>New Meeting Recorder</span>
             </h1>
+
+            {/* Compact Stereo Mix Warning Badge with Hover Popup Tooltip */}
+            <div className="relative group inline-block">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 text-xs font-bold cursor-help hover:bg-amber-200 dark:hover:bg-amber-900/80 transition-all shadow-sm">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                <span>Mic Setup Notice</span>
+              </span>
+
+              {/* Hover Popup Tooltip Card */}
+              <div className="absolute top-full left-0 sm:left-auto mt-2 w-80 sm:w-96 p-4 rounded-2xl bg-zinc-900 text-white border border-amber-500/40 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none group-hover:pointer-events-auto">
+                <p className="font-extrabold text-amber-400 text-xs mb-1 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>Microphone Setup Reminder</span>
+                </p>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Make sure you have your physical <span className="font-bold text-emerald-400">Microphone (or Headset Mic)</span> selected as your active browser input device, rather than Stereo Mix (which records internal PC sound).
+                </p>
+                <p className="text-[11px] text-zinc-300 mt-2 font-semibold bg-amber-950/60 p-2 rounded-xl border border-amber-800/60">
+                  👉 Click the microphone icon in your browser address bar (top left of URL bar) to verify your selected audio device.
+                </p>
+              </div>
+            </div>
           </div>
 
           <LiveTimer isRunning={isRecording} label={isRecording ? "LIVE MIC RECORDING" : "RECORDER READY"} />
         </div>
+
+        {/* Resumed Upload Banner */}
+        {resumedMeeting && (
+          <div className="mb-6 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-500 flex items-center justify-center flex-shrink-0">
+                <FileAudio className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-200">
+                  Resuming Uploaded Meeting: {resumedMeeting.title}
+                </h3>
+                <p className="text-xs text-indigo-700 dark:text-indigo-400 font-medium">
+                  Audio file stored securely. Click "Process Meeting & Save Notes" below to generate AI notes.
+                </p>
+              </div>
+            </div>
+
+            {resumedMeeting.audioUrl && (
+              <audio controls src={resumedMeeting.audioUrl} className="max-w-xs h-9 text-xs" />
+            )}
+          </div>
+        )}
 
         {/* Mic Permission Error Alert Box */}
         {micPermissionError && (
@@ -532,20 +650,6 @@ export default function NewMeetingPage() {
             </div>
           </div>
         )}
-
-        {/* STEREO MIX MIC SELECTION ALERT BANNER */}
-        <div className="mb-6 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-amber-950 dark:text-amber-200 text-xs font-medium flex items-start gap-3 shadow-sm">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="font-bold text-amber-900 dark:text-amber-200 mb-1">Important Microphone Setting Notice (Stereo Mix vs Physical Mic)</p>
-            <p className="text-amber-900 dark:text-amber-300 leading-relaxed">
-              Your Chrome browser currently has <span className="font-bold underline text-amber-950 dark:text-amber-100">Stereo Mix (Realtek Audio)</span> selected as your default microphone! Stereo Mix records PC internal sound, NOT your voice.
-            </p>
-            <p className="text-amber-900 dark:text-amber-300 mt-1 font-semibold">
-              👉 Click the microphone icon in your browser address bar (top left of URL bar) → Change the Microphones dropdown from <span className="font-bold text-red-700 dark:text-red-400">"Stereo Mix"</span> to your physical <span className="font-bold text-emerald-800 dark:text-emerald-300">"Microphone (Realtek Audio)"</span> or Headset Mic.
-            </p>
-          </div>
-        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
@@ -629,7 +733,8 @@ export default function NewMeetingPage() {
                   type="text"
                   value={meetingTitle}
                   onChange={(e) => setMeetingTitle(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Sprint 15 Architecture & Task Allocation"
+                  className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 placeholder:font-normal"
                 />
               </div>
 
@@ -779,16 +884,29 @@ export default function NewMeetingPage() {
 
                   <div className="flex flex-col sm:flex-row gap-2.5 w-full">
                     <div className="flex gap-2 flex-1">
-                      <select
-                        value={manualTaskAssignee}
-                        onChange={(e) => setManualTaskAssignee(e.target.value)}
-                        className="flex-1 px-3 py-2 min-h-[44px] rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-100 focus:outline-none"
-                      >
-                        <option value="Alex Kumar">Alex Kumar</option>
-                        <option value="Sarah Chen">Sarah Chen</option>
-                        <option value="Priya Patel">Priya Patel</option>
-                        <option value="Marcus Vance">Marcus Vance</option>
-                      </select>
+                      {(() => {
+                        const activeAttendees = teamMembers.filter((m) => selectedAttendeeIds.includes(m.id));
+                        const displayAttendees = activeAttendees.length > 0 ? activeAttendees : teamMembers;
+                        const currentAssignee = manualTaskAssignee || (displayAttendees[0]?.name || 'Unassigned');
+
+                        return (
+                          <select
+                            value={currentAssignee}
+                            onChange={(e) => setManualTaskAssignee(e.target.value)}
+                            className="flex-1 px-3 py-2 min-h-[44px] rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-100 focus:outline-none"
+                          >
+                            {displayAttendees.length === 0 ? (
+                              <option value="Unassigned">Unassigned</option>
+                            ) : (
+                              displayAttendees.map((m) => (
+                                <option key={m.id} value={m.name}>
+                                  {m.name}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        );
+                      })()}
 
                       <select
                         value={manualTaskPriority}
@@ -828,18 +946,10 @@ export default function NewMeetingPage() {
                   <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
                   <span>Meeting Transcript</span>
                 </h2>
-
-                <button
-                  onClick={handleResetDemoTranscript}
-                  className="px-3 py-1.5 min-h-[36px] rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all self-start sm:self-auto"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                  <span>Load Demo Transcript</span>
-                </button>
               </div>
 
-              {/* HONEST ENGINE STATUS BANNER */}
-              {isLiveMicTranscribed && diarizedEngine === 'AssemblyAI-Diarization-Real' ? (
+              {/* LIVE AUDIO STATUS BANNER */}
+              {isLiveMicTranscribed && diarizedEngine === 'AssemblyAI-Diarization-Real' && (
                 <div className="mb-3 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold border border-emerald-200 dark:border-emerald-800/60 flex flex-col xs:flex-row xs:items-center justify-between gap-1.5">
                   <span className="flex items-center gap-1.5">
                     <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
@@ -847,26 +957,14 @@ export default function NewMeetingPage() {
                   </span>
                   <PillBadge label="Live Audio" variant="ai" size="sm" />
                 </div>
-              ) : diarizedEngine ? (
-                <div className="mb-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 text-[11px] font-semibold border border-amber-200 dark:border-amber-800/60 flex flex-col xs:flex-row xs:items-center justify-between gap-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                    <span>Populated from Demo Transcript</span>
-                  </span>
-                  <PillBadge label="Demo Audio" variant="tag" size="sm" />
-                </div>
-              ) : (
-                <div className="mb-3 px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium border border-zinc-200 dark:border-zinc-700 flex flex-col xs:flex-row xs:items-center justify-between gap-1.5">
-                  <span>Standard Demo Dialogue Transcript</span>
-                  <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400">Ready to process notes & tasks</span>
-                </div>
               )}
 
               <textarea
                 rows={7}
                 value={transcriptText}
                 onChange={(e) => setTranscriptText(e.target.value)}
-                className="w-full p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                placeholder="Transcript text will appear here during live recording or audio processing..."
+                className="w-full p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-sans"
               />
 
               <button
@@ -1026,10 +1124,16 @@ export default function NewMeetingPage() {
                   {/* Action Buttons */}
                   <div className="pt-2">
                     <button
-                      onClick={() => router.push('/')}
+                      onClick={() => {
+                        if (processedMeeting) {
+                          console.log(`[Stage 3 Finalization] Marking meeting ${processedMeeting.id} as status='completed'...`);
+                          updateMeetingStatus(processedMeeting.id, 'completed');
+                        }
+                        router.push('/');
+                      }}
                       className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-hero"
                     >
-                      View New Meeting on Dashboard &rarr;
+                      Finalize Meeting & View on Dashboard &rarr;
                     </button>
                   </div>
                 </div>
@@ -1046,5 +1150,13 @@ export default function NewMeetingPage() {
 
       </main>
     </div>
+  );
+}
+
+export default function NewMeetingPage() {
+  return (
+    <Suspense fallback={<LogoLoader size="fullscreen" label="Loading Meeting Recorder…" />}>
+      <NewMeetingContent />
+    </Suspense>
   );
 }

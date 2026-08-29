@@ -11,7 +11,7 @@ import {
 import { TeamMember, MeetingGroup } from '@/types';
 import { 
   Users, UserPlus, FolderPlus, Mail, Shield, Trash2, Edit2, 
-  Sparkles, CheckCircle2, User, Layers, Info, ShieldAlert
+  Sparkles, CheckCircle2, User, Layers, Info, ShieldAlert, AlertTriangle
 } from 'lucide-react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -130,6 +130,10 @@ export default function TeamPage() {
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!groupName.trim()) return;
+    if (members.length === 0) {
+      showToast('Please add team members first before creating a group.');
+      return;
+    }
     setSupabaseError(null);
 
     const existingGroup = groups.find((g) => g.id === editingGroupId);
@@ -455,28 +459,53 @@ export default function TeamPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Select Group Members</label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                    {members.map((m) => {
-                      const isChecked = selectedGroupMemberIds.includes(m.id);
-                      return (
-                        <label key={m.id} className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              if (isChecked) {
-                                setSelectedGroupMemberIds(selectedGroupMemberIds.filter((id) => id !== m.id));
-                              } else {
-                                setSelectedGroupMemberIds([...selectedGroupMemberIds, m.id]);
-                              }
-                            }}
-                            className="rounded accent-indigo-600 w-4 h-4"
-                          />
-                          <span>{m.name} ({m.email})</span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                  {members.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-medium space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="font-extrabold text-amber-800 dark:text-amber-300 text-xs mb-0.5">No Team Members Available</p>
+                          <p className="text-amber-900 dark:text-amber-200 text-[11px] leading-relaxed">
+                            You must add team members to your organization first before you can create a meeting group.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsGroupModalOpen(false);
+                          handleOpenMemberModal();
+                        }}
+                        className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-950 dark:text-amber-100 font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>+ Add First Team Member</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                      {members.map((m) => {
+                        const isChecked = selectedGroupMemberIds.includes(m.id);
+                        return (
+                          <label key={m.id} className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setSelectedGroupMemberIds(selectedGroupMemberIds.filter((id) => id !== m.id));
+                                } else {
+                                  setSelectedGroupMemberIds([...selectedGroupMemberIds, m.id]);
+                                }
+                              }}
+                              className="rounded accent-indigo-600 w-4 h-4"
+                            />
+                            <span>{m.name} ({m.email})</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 flex justify-end gap-2">
@@ -489,7 +518,8 @@ export default function TeamPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-hero"
+                    disabled={members.length === 0}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold shadow-hero"
                   >
                     Save Group
                   </button>

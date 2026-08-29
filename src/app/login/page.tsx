@@ -34,30 +34,42 @@ function LoginForm() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    const redirectUrl = `${window.location.origin}/auth/callback${
-      inviteCode.trim() ? `?invite=${encodeURIComponent(inviteCode.trim())}` : ''
-    }`;
+    try {
+      const redirectUrl = `${window.location.origin}/auth/callback${
+        inviteCode.trim() ? `?invite=${encodeURIComponent(inviteCode.trim())}` : ''
+      }`;
 
-    console.log(`[Google OAuth Login] Initiating OAuth flow redirecting to ${redirectUrl}...`);
+      console.log(`[Google OAuth Login] Initiating OAuth flow redirecting to ${redirectUrl}...`);
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      setIsLoading(false);
-      if (error.message.includes('provider is not enabled')) {
-        setErrorMessage('Google Sign-In is not enabled yet in your Supabase Dashboard. Go to Supabase Dashboard -> Authentication -> Providers -> Google, toggle it ON, and paste your Google Client ID & Secret.');
-      } else {
-        setErrorMessage(error.message);
+      if (error) {
+        setIsLoading(false);
+        if (error.message.includes('provider is not enabled')) {
+          setErrorMessage('Google Sign-In is not enabled yet in your Supabase Dashboard. Go to Supabase Dashboard -> Authentication -> Providers -> Google, toggle it ON, and paste your Google Client ID & Secret.');
+        } else {
+          setErrorMessage(error.message);
+        }
+        return;
       }
+
+      if (data?.url) {
+        console.log(`[Google OAuth Login] Redirecting browser to: ${data.url}`);
+        window.location.href = data.url;
+      }
+    } catch (err: any) {
+      console.error('[Google OAuth Exception]', err);
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'An unexpected error occurred during Google sign-in.');
     }
   };
 
@@ -171,8 +183,10 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-          <LogoLoader size="fullscreen" />
+        <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center shadow-lg animate-pulse">
+            <span className="text-white font-extrabold text-xl tracking-tighter">E</span>
+          </div>
         </div>
       }
     >

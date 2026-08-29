@@ -114,9 +114,22 @@ export function saveMeeting(meeting: Meeting): void {
   }
 }
 
+export function updateMeetingStatus(meetingId: string, status: Meeting['status']): void {
+  if (typeof window === 'undefined') return;
+  const mtg = getMeetingById(meetingId);
+  if (mtg) {
+    saveMeeting({
+      ...mtg,
+      status,
+    });
+  }
+}
+
 export function getStoredTasks(): ActionItem[] {
   const meetings = getStoredMeetings();
-  return meetings.flatMap((m) => m.actionItems || []);
+  // Only include action items from finalized/completed meetings!
+  const finalizedMeetings = meetings.filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
+  return finalizedMeetings.flatMap((m) => m.actionItems || []);
 }
 
 export function updateTaskStatus(taskId: string, newStatus: ActionItem['status']): void {

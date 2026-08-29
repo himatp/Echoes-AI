@@ -131,6 +131,7 @@ export async function processMeetingWithAI(payload: {
   title: string;
   speakerSegments: SpeakerSegment[];
   language?: string;
+  existingMeetingId?: string;
 }): Promise<ProcessMeetingResponse> {
   try {
     const res = await fetch('/api/ai/process-meeting', {
@@ -148,12 +149,7 @@ export async function processMeetingWithAI(payload: {
       };
     }
 
-    const data = parsed.data;
-    if (data.success && data.meeting) {
-      // Save processed meeting to persistence store
-      saveMeeting(data.meeting);
-    }
-    return data;
+    return parsed.data;
   } catch (err: any) {
     console.error('Process Meeting API call error:', err);
     return {

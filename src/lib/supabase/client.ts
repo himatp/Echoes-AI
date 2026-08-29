@@ -111,6 +111,7 @@ export async function fetchMeetingsFromSupabase(organizationId: string): Promise
         language: m.language || 'en',
         originalLanguage: m.original_language,
         audioUrl: m.audio_url,
+        status: m.status || 'completed',
         attendeeIds: m.attendee_ids || [],
         createdAt: m.created_at,
       };
@@ -191,17 +192,22 @@ export async function syncMeetingToSupabase(meeting: Meeting, organizationId?: s
       original_language: meeting.originalLanguage,
       speaker_segments: meeting.speakerSegments,
       audio_url: meeting.audioUrl || null,
+      status: meeting.status || 'uploaded',
       attendee_ids: meeting.attendeeIds || [],
       created_at: meeting.createdAt,
     };
 
     let { error: mtgErr } = await supabase.from('meetings').upsert(fullPayload);
 
-    // Graceful Fallback: If attendee_ids column is missing in Supabase table, retry without attendee_ids
-    if (mtgErr && mtgErr.message.includes('attendee_ids')) {
-      console.warn('[Supabase Fallback] "attendee_ids" column missing on meetings. Retrying upsert without attendee_ids...');
-      const { attendee_ids, ...legacyPayload } = fullPayload;
-      const fallbackRes = await supabase.from('meetings').upsert(legacyPayload);
+    // Graceful Fallback: If status, audio_url, or attendee_ids columns are missing in Supabase schema cache
+    if (mtgErr && (mtgErr.message.includes('status') || mtgErr.message.includes('audio_url') || mtgErr.message.includes('attendee_ids') || mtgErr.message.includes('schema cache'))) {
+      console.warn('[Supabase Fallback] Schema cache missing new columns. Retrying upsert with compatible legacy payload:', mtgErr.message);
+      const fallbackPayload = { ...fullPayload };
+      delete fallbackPayload.status;
+      delete fallbackPayload.audio_url;
+      delete fallbackPayload.attendee_ids;
+
+      const fallbackRes = await supabase.from('meetings').upsert(fallbackPayload);
       mtgErr = fallbackRes.error;
     }
 

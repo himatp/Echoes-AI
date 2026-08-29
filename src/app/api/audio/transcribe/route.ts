@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
         console.log('[AssemblyAI API] Submitting async transcript job for audio URL:', uploadUrl);
 
-        // Submit transcript job with explicit language_code 'en'
+        // Submit transcript job with language_detection for automatic language & accent support
         const submitRes = await fetch('https://api.assemblyai.com/v2/transcript', {
           method: 'POST',
           headers: {
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             audio_url: uploadUrl,
             speaker_labels: true,
-            language_code: 'en',
+            language_detection: true,
           }),
         });
 
@@ -109,15 +109,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // STEP 2: FALLBACK HEURISTIC DIARIZATION (Only when NO audio binary or API Key)
-    console.log('[Transcribe API] Executing heuristic transcript diarization for rawText input...');
-    let textToProcess = rawText;
-    if (!textToProcess) {
-      textToProcess = `Sarah Chen: Welcome everyone to our Sprint 15 sync. Today we are testing AssemblyAI audio diarization and Gemini AI task extraction.
-Alex Kumar: I will take the task to test AssemblyAI multi-speaker diarization on real audio files.
-Priya Patel: I will configure the Gemini JSON mode schema to extract action items, summaries, and health scores.
-Marcus Vance: I will handle the Google Calendar OAuth consent flow for one-click event sync.`;
+    // STEP 2: FALLBACK HEURISTIC DIARIZATION (Only when rawText input is explicitly provided)
+    if (!rawText || !rawText.trim()) {
+      return NextResponse.json({
+        success: false,
+        engine: 'Error-Boundary',
+        error: 'No audio recording, uploaded audio file, or transcript text provided. Please record mic audio or upload an audio file first.',
+      }, { status: 400 });
     }
+
+    console.log('[Transcribe API] Executing transcript diarization for rawText input...');
+    const textToProcess = rawText.trim();
 
     const lines = textToProcess.split('\n').filter((l: string) => l.trim().length > 0);
     const fallbackSegments: SpeakerSegment[] = lines.map((line: string, idx: number) => {

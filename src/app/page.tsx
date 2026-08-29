@@ -8,7 +8,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { LiveTimer } from '@/components/ui/LiveTimer';
 import { getStoredMeetings, getStoredTasks, fetchAndHydrateMeetingsFromSupabase } from '@/lib/store/localStore';
 import { Meeting, ActionItem } from '@/types';
-import { Mic, ArrowUpRight, CheckCircle2, Clock, Sparkles, Activity, FileText, Zap, ChevronRight, Layers } from 'lucide-react';
+import { Mic, ArrowUpRight, CheckCircle2, Clock, Sparkles, Activity, FileText, Zap, ChevronRight, Layers, History, ArrowRight, FileAudio } from 'lucide-react';
 import Link from 'next/link';
 
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -34,7 +34,8 @@ export default function DashboardPage() {
     if (activeOrg?.id) {
       fetchAndHydrateMeetingsFromSupabase(activeOrg.id).then((hydrated) => {
         setMeetings(hydrated);
-        setTasks(hydrated.flatMap((m) => m.actionItems || []));
+        const finalizedMeetings = hydrated.filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
+        setTasks(finalizedMeetings.flatMap((m) => m.actionItems || []));
       });
     }
 
@@ -44,6 +45,9 @@ export default function DashboardPage() {
     else if (hour < 17) setGreeting('Good afternoon');
     else setGreeting('Good evening');
   }, [activeOrg?.id]);
+
+  const pendingReviewMeetings = meetings.filter((m) => m.status === 'uploaded' || m.status === 'draft');
+  const completedMeetings = meetings.filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
 
   // Compute live team velocity metrics
   const totalTasks = tasks.length;
@@ -97,14 +101,9 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* Hero Card & Contrast Card Row */}
-        <motion.div 
-          variants={container}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8"
-        >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* HERO CARD (Bold Indigo Accent) */}
-          <motion.div variants={item} className="lg:col-span-2 card-hero p-6 lg:p-8 flex flex-col justify-between relative overflow-hidden group">
+          <div className="lg:col-span-2 card-hero p-6 lg:p-8 flex flex-col justify-between relative overflow-hidden group">
             <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-white/10 rounded-full blur-2xl group-hover:scale-110 transition-transform pointer-events-none" />
             
             <div className="relative z-10">
@@ -144,10 +143,10 @@ export default function DashboardPage() {
                 <ArrowUpRight className="w-4 h-4 flex-shrink-0" />
               </Link>
             </div>
-          </motion.div>
+          </div>
 
           {/* NEAR-BLACK CONTRAST CARD */}
-          <motion.div variants={item} className="card-contrast p-6 flex flex-col justify-between relative overflow-hidden">
+          <div className="card-contrast p-6 flex flex-col justify-between relative overflow-hidden">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-bold tracking-wider text-zinc-400 uppercase flex items-center gap-2">
@@ -183,40 +182,113 @@ export default function DashboardPage() {
                 Details &rarr;
               </Link>
             </div>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
+
+        {/* NEEDS REVIEW SECTION */}
+        {pendingReviewMeetings.length > 0 && (
+          <div className="mb-8 p-6 card-white border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-extrabold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2">
+                  <History className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                  <span>Needs Review ({pendingReviewMeetings.length})</span>
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5">
+                  Unfinished recordings and pending AI drafts. Click to resume or finalize.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingReviewMeetings.map((mtg) => {
+                const isUploaded = mtg.status === 'uploaded';
+                return (
+                  <div
+                    key={mtg.id}
+                    className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide ${
+                          isUploaded
+                            ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                            : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        }`}>
+                          {isUploaded ? 'Audio uploaded — not yet processed' : 'Notes extracted — not yet reviewed'}
+                        </span>
+                        <span className="text-[11px] text-zinc-400 font-mono">
+                          {new Date(mtg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+
+                      <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 line-clamp-1">
+                        {mtg.title}
+                      </h4>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-1">
+                        {isUploaded 
+                          ? 'Raw audio file stored safely in Supabase. Resume to generate AI notes & tasks.' 
+                          : `${mtg.actionItems?.length || 0} tasks extracted • Health Score ${mtg.healthScore?.score || 85}/100`}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                      <span className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {mtg.duration || '0 min'}
+                      </span>
+
+                      {isUploaded ? (
+                        <Link
+                          href={`/new-meeting?resumeId=${mtg.id}`}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors flex items-center gap-1"
+                        >
+                          <span>Resume Processing</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/meetings/${mtg.id}`}
+                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors flex items-center gap-1"
+                        >
+                          <span>Review & Finalize</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Recent Meetings Grid & Quick Tasks */}
-        <motion.div 
-          variants={container}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
-        >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Meetings List (White Cards - DYNAMIC) */}
-          <motion.div variants={item} className="lg:col-span-2 card-white p-6">
+          <div className="lg:col-span-2 card-white p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-6">
               <div>
                 <h3 className="text-lg font-bold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2">
                   <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                  <span>Processed Meetings ({meetings.length})</span>
+                  <span>Processed Meetings ({completedMeetings.length})</span>
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-0.5">Loaded dynamically from persistence store • Click to inspect summary & health score</p>
               </div>
 
               <Link href="/meetings" className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-1 self-start sm:self-auto min-h-[36px]">
-                <span>View all ({meetings.length})</span>
+                <span>View all ({completedMeetings.length})</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </Link>
             </div>
 
-            {meetings.length === 0 ? (
+            {completedMeetings.length === 0 ? (
               <div className="p-8 text-center bg-zinc-50 dark:bg-zinc-900/60 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
-                No meetings processed yet. Click "Start New Recording" to create your first AI meeting summary.
+                No finalized meetings yet. Click "Start New Recording" to process a meeting or finalize an item under Needs Review.
               </div>
             ) : (
               <div className="space-y-4">
-                {meetings.map((mtg) => (
+                {completedMeetings.map((mtg) => (
                   <Link 
                     key={mtg.id}
                     href={`/meetings/${mtg.id}`}
@@ -253,10 +325,10 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
-          </motion.div>
+          </div>
 
           {/* Urgent Pending Tasks Card (White Card - DYNAMIC) */}
-          <motion.div variants={item} className="card-white p-6 flex flex-col justify-between">
+          <div className="card-white p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2">
@@ -297,8 +369,8 @@ export default function DashboardPage() {
               <span>Manage All Action Items ({totalTasks})</span>
               <ChevronRight className="w-4 h-4" />
             </Link>
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
 
       </main>
     </div>
