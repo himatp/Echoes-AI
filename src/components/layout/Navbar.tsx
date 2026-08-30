@@ -125,7 +125,7 @@ export const Navbar: React.FC = () => {
             className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 min-h-[40px] sm:min-h-[44px] rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-hero hover:bg-indigo-700 active:scale-95 transition-all"
           >
             <Mic className="w-4 h-4 flex-shrink-0" />
-            <span className="hidden sm:inline">+ New Meeting</span>
+            <span className="hidden sm:inline">New Meeting</span>
             <span className="sm:hidden">New</span>
           </Link>
 
@@ -221,7 +221,7 @@ export const Navbar: React.FC = () => {
                       className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors"
                     >
                       <UserPlus className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>+ Invite teammates</span>
+                      <span>Invite teammates</span>
                     </button>
                     <button
                       onClick={() => {
@@ -231,7 +231,7 @@ export const Navbar: React.FC = () => {
                       className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>+ Create workspace</span>
+                      <span>Create workspace</span>
                     </button>
                   </div>
 
@@ -312,7 +312,7 @@ export const Navbar: React.FC = () => {
                   className="px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5"
                 >
                   <UserPlus className="w-4 h-4" />
-                  <span>+ Invite teammates</span>
+                  <span>Invite teammates</span>
                 </button>
                 <button
                   onClick={() => {

@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<ActionItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [greeting, setGreeting] = useState('Good morning');
+  const [needsReviewFilter, setNeedsReviewFilter] = useState<'all' | 'uploaded' | 'transcribed' | 'draft'>('all');
 
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Friend';
 
@@ -46,7 +47,18 @@ export default function DashboardPage() {
     else setGreeting('Good evening');
   }, [activeOrg?.id]);
 
-  const pendingReviewMeetings = meetings.filter((m) => m.status === 'uploaded' || m.status === 'draft');
+  const pendingReviewMeetings = meetings.filter((m) => m.status === 'uploaded' || m.status === 'transcribed' || m.status === 'draft');
+  const uploadedReviewCount = pendingReviewMeetings.filter((m) => m.status === 'uploaded').length;
+  const transcribedReviewCount = pendingReviewMeetings.filter((m) => m.status === 'transcribed').length;
+  const draftReviewCount = pendingReviewMeetings.filter((m) => m.status === 'draft').length;
+
+  const filteredNeedsReviewMeetings = pendingReviewMeetings.filter((m) => {
+    if (needsReviewFilter === 'uploaded') return m.status === 'uploaded';
+    if (needsReviewFilter === 'transcribed') return m.status === 'transcribed';
+    if (needsReviewFilter === 'draft') return m.status === 'draft';
+    return true;
+  });
+
   const completedMeetings = meetings.filter((m) => m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY'));
 
   // Compute live team velocity metrics
@@ -188,7 +200,7 @@ export default function DashboardPage() {
         {/* NEEDS REVIEW SECTION */}
         {pendingReviewMeetings.length > 0 && (
           <div className="mb-8 p-6 card-white border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-amber-500/20">
               <div>
                 <h3 className="text-lg font-extrabold text-zinc-900 dark:text-white tracking-tight flex items-center gap-2">
                   <History className="w-5 h-5 text-amber-500 flex-shrink-0" />
@@ -198,68 +210,139 @@ export default function DashboardPage() {
                   Unfinished recordings and pending AI drafts. Click to resume or finalize.
                 </p>
               </div>
+
+              {/* Filter Tabs Bar */}
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/80 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 shadow-sm self-start sm:self-auto flex-wrap">
+                <button
+                  onClick={() => setNeedsReviewFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    needsReviewFilter === 'all'
+                      ? 'bg-amber-500 text-white shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  All ({pendingReviewMeetings.length})
+                </button>
+                <button
+                  onClick={() => setNeedsReviewFilter('uploaded')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    needsReviewFilter === 'uploaded'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  Audio Uploaded ({uploadedReviewCount})
+                </button>
+                <button
+                  onClick={() => setNeedsReviewFilter('transcribed')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    needsReviewFilter === 'transcribed'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  Audio Transcribed ({transcribedReviewCount})
+                </button>
+                <button
+                  onClick={() => setNeedsReviewFilter('draft')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    needsReviewFilter === 'draft'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  Notes Extracted ({draftReviewCount})
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingReviewMeetings.map((mtg) => {
-                const isUploaded = mtg.status === 'uploaded';
-                return (
-                  <div
-                    key={mtg.id}
-                    className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-all"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide ${
-                          isUploaded
-                            ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                            : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                        }`}>
-                          {isUploaded ? 'Audio uploaded — not yet processed' : 'Notes extracted — not yet reviewed'}
-                        </span>
-                        <span className="text-[11px] text-zinc-400 font-mono">
-                          {new Date(mtg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                        </span>
+            {filteredNeedsReviewMeetings.length === 0 ? (
+              <div className="p-8 text-center bg-white/40 dark:bg-zinc-900/40 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                  No items match the selected "{
+                    needsReviewFilter === 'uploaded'
+                      ? 'Audio Uploaded'
+                      : needsReviewFilter === 'transcribed'
+                      ? 'Audio Transcribed'
+                      : 'Notes Extracted'
+                  }" filter.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredNeedsReviewMeetings.map((mtg) => {
+                  const isUploaded = mtg.status === 'uploaded';
+                  const isTranscribed = mtg.status === 'transcribed';
+                  const isDraft = mtg.status === 'draft';
+
+                  return (
+                    <div
+                      key={mtg.id}
+                      className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-all"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide ${
+                            isUploaded
+                              ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : isTranscribed
+                              ? 'bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                              : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                          }`}>
+                            {isUploaded
+                              ? 'Stage 1: Audio uploaded — not yet processed'
+                              : isTranscribed
+                              ? 'Stage 2: Audio transcribed — awaiting notes'
+                              : 'Stage 3: Notes extracted — not yet reviewed'}
+                          </span>
+                          <span className="text-[11px] text-zinc-400 font-mono">
+                            {new Date(mtg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+
+                        <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 line-clamp-1">
+                          {mtg.title}
+                        </h4>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-1">
+                          {isUploaded 
+                            ? 'Raw audio file stored safely in Supabase. Resume to generate AI notes & tasks.'
+                            : isTranscribed
+                            ? `Audio transcribed (${mtg.speakerSegments?.length || 0} dialogue lines). Resume to extract AI notes & tasks.`
+                            : `${mtg.actionItems?.length || 0} tasks extracted • Health Score ${mtg.healthScore?.score || 85}/100`}
+                        </p>
                       </div>
 
-                      <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 line-clamp-1">
-                        {mtg.title}
-                      </h4>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-1">
-                        {isUploaded 
-                          ? 'Raw audio file stored safely in Supabase. Resume to generate AI notes & tasks.' 
-                          : `${mtg.actionItems?.length || 0} tasks extracted • Health Score ${mtg.healthScore?.score || 85}/100`}
-                      </p>
-                    </div>
+                      <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                        <span className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          {mtg.duration || '0 min'}
+                        </span>
 
-                    <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                      <span className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        {mtg.duration || '0 min'}
-                      </span>
-
-                      {isUploaded ? (
-                        <Link
-                          href={`/new-meeting?resumeId=${mtg.id}`}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors flex items-center gap-1"
-                        >
-                          <span>Resume Processing</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      ) : (
-                        <Link
-                          href={`/meetings/${mtg.id}`}
-                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors flex items-center gap-1"
-                        >
-                          <span>Review & Finalize</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </Link>
-                      )}
+                        {isUploaded || isTranscribed ? (
+                          <Link
+                            href={`/new-meeting?resumeId=${mtg.id}`}
+                            className={`px-3 py-1.5 rounded-lg text-white text-xs font-bold transition-colors flex items-center gap-1 ${
+                              isUploaded ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'
+                            }`}
+                          >
+                            <span>{isUploaded ? 'Resume Stage 1' : 'Resume Stage 2'}</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        ) : (
+                          <Link
+                            href={`/meetings/${mtg.id}`}
+                            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors flex items-center gap-1"
+                          >
+                            <span>Review & Finalize</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Link>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

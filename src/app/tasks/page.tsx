@@ -149,7 +149,7 @@ export default function TaskBoardPage() {
               className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-hero flex items-center justify-center gap-2 transition-all active:scale-95"
             >
               <Plus className="w-4 h-4 flex-shrink-0" />
-              <span>+ Create Quick Task</span>
+              <span>Create Quick Task</span>
             </button>
           </div>
         </div>
@@ -358,7 +358,7 @@ export default function TaskBoardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-zinc-200 text-zinc-400 font-extrabold uppercase tracking-wider">
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-400 font-extrabold uppercase tracking-wider">
                     <th className="pb-3">Task Title</th>
                     <th className="pb-3">Assignee</th>
                     <th className="pb-3">Priority</th>
@@ -367,13 +367,13 @@ export default function TaskBoardPage() {
                     <th className="pb-3">Due Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100 font-medium text-zinc-800">
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80 font-medium text-zinc-800 dark:text-zinc-200">
                   {filteredTasks.map((t) => {
                     const originMeeting = meetings.find((m) => m.id === t.meetingId);
                     return (
-                      <tr key={t.id} className="hover:bg-zinc-50 transition-colors">
-                        <td className="py-3 font-bold text-zinc-900 pr-4">{t.title}</td>
-                        <td className="py-3 pr-4">{t.assignee}</td>
+                      <tr key={t.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
+                        <td className="py-3 font-bold text-zinc-900 dark:text-zinc-100 pr-4">{t.title}</td>
+                        <td className="py-3 pr-4 text-zinc-700 dark:text-zinc-300 font-semibold">{t.assignee}</td>
                         <td className="py-3 pr-4">
                           <PillBadge priority={t.priority} size="sm" />
                         </td>
@@ -381,7 +381,7 @@ export default function TaskBoardPage() {
                           <select
                             value={t.status}
                             onChange={(e: any) => handleStatusChange(t.id, e.target.value)}
-                            className="px-2.5 py-1 rounded-xl text-xs font-bold border focus:outline-none bg-zinc-50 border-zinc-200"
+                            className="px-2.5 py-1 rounded-xl text-xs font-bold border focus:outline-none bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200"
                           >
                             <option value="todo">To Do</option>
                             <option value="in_progress">In Progress</option>
@@ -390,13 +390,13 @@ export default function TaskBoardPage() {
                         </td>
                         <td className="py-3 pr-4">
                           {originMeeting ? (
-                            <Link href={`/meetings/${originMeeting.id}`} className="text-indigo-600 hover:underline flex items-center gap-1 font-semibold">
+                            <Link href={`/meetings/${originMeeting.id}`} className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold">
                               <span>{originMeeting.title}</span>
                               <ExternalLink className="w-3 h-3" />
                             </Link>
                           ) : 'Direct Creation'}
                         </td>
-                        <td className="py-3 font-mono text-zinc-400">{t.dueDate}</td>
+                        <td className="py-3 font-mono text-zinc-400 dark:text-zinc-500">{t.dueDate}</td>
                       </tr>
                     );
                   })}

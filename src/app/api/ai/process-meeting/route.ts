@@ -22,6 +22,28 @@ export async function POST(req: NextRequest) {
       .map((seg: SpeakerSegment) => `[${seg.timestamp}] ${seg.speaker}: "${seg.text}"`)
       .join('\n');
 
+    // Compute accurate meeting duration from audio payload or last segment timestamp
+    let calculatedDuration = body.duration;
+    if (!calculatedDuration && speakerSegments && speakerSegments.length > 0) {
+      const lastSeg = speakerSegments[speakerSegments.length - 1];
+      if (lastSeg && lastSeg.timestamp) {
+        const parts = lastSeg.timestamp.split(':');
+        if (parts.length === 2) {
+          const mins = parseInt(parts[0], 10) || 0;
+          const secs = parseInt(parts[1], 10) || 0;
+          const totalSecs = mins * 60 + secs;
+          if (totalSecs > 0) {
+            const finalMins = Math.floor(totalSecs / 60);
+            const finalSecs = totalSecs % 60;
+            calculatedDuration = finalSecs > 0 ? `${finalMins} min ${finalSecs} sec` : `${Math.max(1, finalMins)} min`;
+          }
+        }
+      }
+    }
+    if (!calculatedDuration) {
+      calculatedDuration = `${Math.max(1, Math.ceil(speakerSegments.length * 0.3))} min`;
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     const todayStr = new Date().toISOString().split('T')[0];
     const todayDayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
@@ -58,19 +80,18 @@ RETURN STRICT JSON matching this EXACT structure:
   "sentiment": "positive" | "neutral" | "action-oriented" | "critical",
   "detectedLanguage": "English" | "Gujarati" | "Hindi" | "Other",
   "healthScore": {
-    "score": number from 0 to 100,
-    "talkTimeBalance": number from 0 to 100,
-    "decisionDensity": number from 0 to 100,
-    "unassignedPenalty": number penalty,
-    "suggestions": ["Suggestion 1", "Suggestion 2"]
+    "score": 85,
+    "talkTimeBalance": 80,
+    "decisionDensity": 88,
+    "unassignedPenalty": 5,
+    "suggestions": ["Suggestion 1"]
   },
   "actionItems": [
     {
-      "title": "Actionable task description in English starting with a verb",
-      "assignee": "Exact name of speaker assigned or 'Unassigned'",
+      "title": "Action item title in English",
+      "assignee": "Name of assigned person from speech or Unassigned",
       "priority": "urgent" | "high" | "medium" | "low",
-      "dueDate": "YYYY-MM-DD (must be on or after ${todayStr})",
-      "speakerSource": "Speaker who requested or owned this action item"
+      "dueDate": "YYYY-MM-DD"
     }
   ]
 }
@@ -88,7 +109,7 @@ RETURN STRICT JSON matching this EXACT structure:
           id: targetMtgId,
           title: title || 'AI Extracted Meeting',
           date: todayStr,
-          duration: `${Math.ceil(speakerSegments.length * 3.5)} min`,
+          duration: calculatedDuration,
           sentiment: jsonOutput.sentiment || 'action-oriented',
           summary: jsonOutput.summary,
           keyDecisions: jsonOutput.keyDecisions || [],
@@ -135,7 +156,7 @@ RETURN STRICT JSON matching this EXACT structure:
       id: targetMtgId,
       title: title || 'Diarized Meeting Summary',
       date: todayStr,
-      duration: `${Math.max(12, speakerSegments.length * 4)} min`,
+      duration: calculatedDuration,
       sentiment: 'action-oriented',
       summary: `The meeting focused on key architecture decisions and multi-language review. Speakers reviewed open action items and established next milestones.`,
       keyDecisions: [

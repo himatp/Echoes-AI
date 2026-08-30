@@ -663,7 +663,15 @@ export default function MeetingDetailPage() {
                   }}
                   onLoadedMetadata={() => {
                     if (audioRef.current && isFinite(audioRef.current.duration) && !isNaN(audioRef.current.duration)) {
-                      setDurationSec(Math.floor(audioRef.current.duration));
+                      const totalSeconds = Math.floor(audioRef.current.duration);
+                      setDurationSec(totalSeconds);
+                      const mins = Math.floor(totalSeconds / 60);
+                      const secs = totalSeconds % 60;
+                      const formattedDuration = secs > 0 ? `${mins} min ${secs} sec` : `${Math.max(1, mins)} min`;
+                      if (meeting && meeting.duration !== formattedDuration) {
+                        meeting.duration = formattedDuration;
+                        saveMeeting(meeting);
+                      }
                     }
                   }}
                   onEnded={() => setIsPlaying(false)}
@@ -773,8 +781,8 @@ export default function MeetingDetailPage() {
             {/* Action Items & Google Calendar One-Click Sync */}
             <div className="card-white p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold text-zinc-900 uppercase tracking-wider flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-600" />
+                <h2 className="text-sm font-bold text-zinc-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   Action Items ({meeting.actionItems.length})
                 </h2>
               </div>
@@ -795,7 +803,7 @@ export default function MeetingDetailPage() {
                         <div className="flex items-center gap-2">
                           {isUnlinked ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold text-[10px]">
-                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                               <span>Unlinked: {task.unlinkedSpeaker || task.assignee}</span>
                             </span>
                           ) : (
@@ -815,7 +823,7 @@ export default function MeetingDetailPage() {
                             }}
                             className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline text-[10px]"
                           >
-                            {isUnlinked ? '+ Link Contact' : 'Change Contact'}
+                            {isUnlinked ? 'Link Contact' : 'Change Contact'}
                           </button>
                         </div>
 
@@ -824,10 +832,10 @@ export default function MeetingDetailPage() {
                           onChange={(e: any) => handleTaskStatusChange(task.id, e.target.value)}
                           className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border focus:outline-none ${
                             task.status === 'completed'
-                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800'
                               : task.status === 'in_progress'
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : 'bg-zinc-200 text-zinc-800 border-zinc-300'
+                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700'
                           }`}
                         >
                           <option value="todo">To Do</option>
@@ -981,7 +989,7 @@ export default function MeetingDetailPage() {
                     type="submit"
                     className="px-3.5 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-800 hover:bg-zinc-800 text-white text-xs font-bold transition-all"
                   >
-                    + Add
+                    Add
                   </button>
                 </form>
 

@@ -38,6 +38,7 @@ function NewMeetingContent() {
   const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<string[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [showSampleScript, setShowSampleScript] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const members = getStoredTeamMembers();
@@ -207,9 +208,39 @@ function NewMeetingContent() {
     return uploadedMeeting;
   };
 
+  // STAGE 2: AUTO-SAVE ON TRANSCRIPTION HELPER FUNCTION
+  const autoSaveTranscribedStage = async (audioUrl: string | undefined, rawTitle: string, segments: SpeakerSegment[]) => {
+    const mtgId = activeMeetingIdRef.current || `mtg-${Date.now()}`;
+    activeMeetingIdRef.current = mtgId;
+
+    const titleToUse = meetingTitle.trim() || rawTitle || `Transcribed Meeting — ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    const transcribedMeeting: Meeting = {
+      id: mtgId,
+      organizationId: activeOrg?.id,
+      title: titleToUse.replace(/\.[^/.]+$/, ''),
+      date: new Date().toISOString().split('T')[0],
+      duration: '0 min',
+      sentiment: 'neutral',
+      summary: '',
+      keyDecisions: [],
+      actionItems: [],
+      speakerSegments: segments,
+      healthScore: { score: 0, talkTimeBalance: 0, decisionDensity: 0, unassignedPenalty: 0, suggestions: [] },
+      language: 'en',
+      status: 'transcribed',
+      audioUrl: audioUrl || activeAudioUrlRef.current || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    console.log(`[Stage 2 Auto-Save] Auto-saving transcribed meeting ${mtgId} with status='transcribed'...`);
+    saveMeeting(transcribedMeeting);
+    return transcribedMeeting;
+  };
+
   const autoTriggeredRef = useRef(false);
 
-  // Handle Resuming an Uploaded Meeting & Automatically Start Processing Pipeline
+  // Handle Resuming an Uploaded/Transcribed Meeting & Automatically Start Processing Pipeline
   useEffect(() => {
     if (resumeId && !autoTriggeredRef.current) {
       const existing = getMeetingById(resumeId);
@@ -219,11 +250,14 @@ function NewMeetingContent() {
         setMeetingTitle(existing.title);
         setUploadedFileName(existing.title);
         setResumedMeeting(existing);
+        if (existing.speakerSegments && existing.speakerSegments.length > 0) {
+          setDiarizedSegments(existing.speakerSegments);
+        }
 
-        // If meeting is in uploaded or draft state, automatically trigger the processing pipeline!
-        if (existing.status === 'uploaded' || existing.status === 'draft') {
+        // If meeting is in uploaded, transcribed, or draft state, automatically trigger the processing pipeline!
+        if (existing.status === 'uploaded' || existing.status === 'transcribed' || existing.status === 'draft') {
           autoTriggeredRef.current = true;
-          console.log(`[Auto-Resume Pipeline] Automatically starting processing pipeline for meeting ${existing.id}...`);
+          console.log(`[Auto-Resume Pipeline] Automatically starting processing pipeline for meeting ${existing.id} (status: ${existing.status})...`);
           setTimeout(() => {
             handleStartPipeline();
           }, 300);
@@ -362,11 +396,8 @@ function NewMeetingContent() {
     }
   };
 
-  // Upload & Save Stage 1 Draft upon File Selection (Without auto-running AI transcription)
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  // Process Selected or Dropped Local Audio File
+  const processSelectedAudioFile = async (file: File) => {
     rawAudioBlobRef.current = file;
     setUploadedFileName(file.name);
     setDiarizeError(null);
@@ -394,6 +425,38 @@ function NewMeetingContent() {
     }
 
     setIsDiarizing(false);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) await processSelectedAudioFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (file.type.startsWith('audio/') || file.type.startsWith('video/') || /\.(mp3|wav|m4a|webm|mp4|ogg|aac)$/i.test(file.name)) {
+        await processSelectedAudioFile(file);
+      } else {
+        setDiarizeError('⚠️ Invalid file format. Please drop a valid audio file (.mp3, .wav, .m4a, .webm, .mp4).');
+      }
+    }
   };
 
   // Guaranteed Manual "+ Add Task Fallback" Form Handler
@@ -484,6 +547,10 @@ function NewMeetingContent() {
       setDiarizedSegments(diarizeRes.segments);
       segmentsToProcess = diarizeRes.segments;
       if (diarizeRes.warning) setEngineWarning(diarizeRes.warning);
+
+      // Auto-save Stage 2 draft with status: 'transcribed'
+      const stage2Title = meetingTitle.trim() || uploadedFileName?.replace(/\.[^/.]+$/, '') || 'Transcribed Meeting';
+      await autoSaveTranscribedStage(activeAudioUrlRef.current || undefined, stage2Title, diarizeRes.segments);
     }
 
     // VALIDATION: Prevent empty audio transcription from proceeding to extraction
@@ -773,29 +840,54 @@ function NewMeetingContent() {
                 </div>
               </div>
 
-              {/* Upload Local Audio File Option */}
-              <div className="mb-4 p-3.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60">
-                <p className="text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1.5 flex items-center gap-1.5">
-                  <FileAudio className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  Or Upload Local Audio File (.mp3, .wav, .m4a, .webm):
-                </p>
-                
+              {/* Drag & Drop Audio Upload Dropzone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`mb-4 p-4 rounded-2xl border-2 transition-all cursor-pointer group ${
+                  isDragging
+                    ? 'border-dashed border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/80 scale-[1.01] shadow-lg ring-2 ring-indigo-500/20'
+                    : uploadedFileName
+                    ? 'border-solid border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/20'
+                    : 'border-dashed border-zinc-300 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:border-indigo-400 dark:hover:border-indigo-600'
+                }`}
+              >
                 <input
                   type="file"
                   ref={fileInputRef}
-                  accept="audio/*"
+                  accept="audio/*,.mp3,.wav,.m4a,.webm,.mp4"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
 
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isDiarizing}
-                  className="w-full py-2.5 px-3 rounded-xl bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-950 text-indigo-900 dark:text-indigo-200 text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
-                >
-                  <Upload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>{uploadedFileName ? `Uploaded: ${uploadedFileName}` : "Upload Sample Audio File directly to AssemblyAI"}</span>
-                </button>
+                <div className="flex flex-col items-center justify-center text-center space-y-2 py-1">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform ${
+                    isDragging
+                      ? 'bg-indigo-500 text-white scale-110'
+                      : uploadedFileName
+                      ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 group-hover:scale-105'
+                  }`}>
+                    {uploadedFileName ? <Check className="w-5 h-5" /> : <Upload className="w-5 h-5" />}
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold text-zinc-900 dark:text-white mb-0.5">
+                      {isDragging
+                        ? 'Drop your audio file here!'
+                        : uploadedFileName
+                        ? `Selected File: ${uploadedFileName}`
+                        : 'Drag & Drop Audio File here, or click to browse'}
+                    </p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                      {uploadedFileName
+                        ? 'Draft saved — click "Process Meeting & Save Notes" below when ready'
+                        : 'Supports .mp3, .wav, .m4a, .webm, .mp4 files'}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Optional Sample Script Toggle (Demo Scaffolding Gated) */}
@@ -937,7 +1029,7 @@ function NewMeetingContent() {
                       className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-zinc-900 dark:bg-indigo-600 text-white text-xs font-bold hover:bg-zinc-800 dark:hover:bg-indigo-700 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 flex-shrink-0"
                     >
                       <Plus className="w-4 h-4 text-indigo-400 dark:text-indigo-200 flex-shrink-0" />
-                      <span>+ Add Task</span>
+                      <span>Add Task</span>
                     </button>
                   </div>
 

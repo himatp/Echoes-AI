@@ -67,7 +67,7 @@ export interface MeetingHealthScore {
   suggestions: string[];
 }
 
-export type MeetingStatus = 'uploaded' | 'draft' | 'completed';
+export type MeetingStatus = 'uploaded' | 'transcribed' | 'draft' | 'completed';
 
 export interface Meeting {
   id: string;
