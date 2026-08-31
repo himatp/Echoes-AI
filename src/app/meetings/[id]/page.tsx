@@ -14,6 +14,7 @@ import {
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { safeParseJsonResponse } from '@/lib/api/safeFetch';
+import { syncTaskStatusToSupabase } from '@/lib/supabase/client';
 
 export default function MeetingDetailPage() {
   const router = useRouter();
@@ -397,7 +398,7 @@ export default function MeetingDetailPage() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const handleTaskStatusChange = (taskId: string, newStatus: ActionItem['status']) => {
+  const handleTaskStatusChange = async (taskId: string, newStatus: ActionItem['status']) => {
     updateTaskStatus(taskId, newStatus);
     if (meeting) {
       const updatedItems = meeting.actionItems.map((t) => 
@@ -405,7 +406,12 @@ export default function MeetingDetailPage() {
       );
       setMeeting({ ...meeting, actionItems: updatedItems });
     }
-    showToast(`Task status updated to "${newStatus.replace('_', ' ')}"`);
+    const res = await syncTaskStatusToSupabase(taskId, newStatus);
+    if (!res.success && res.error) {
+      showToast(`⚠️ ${res.error}`);
+    } else {
+      showToast(`Task status updated to "${newStatus.replace('_', ' ')}"`);
+    }
   };
 
   const showToast = (msg: string) => {

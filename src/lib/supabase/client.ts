@@ -138,9 +138,12 @@ export async function fetchTeamMembersFromSupabase(organizationId: string): Prom
     return data.map((m: any) => ({
       id: m.id,
       organizationId: m.organization_id,
+      userId: m.user_id || undefined,
       name: m.name,
       email: m.email,
       role: m.role || undefined,
+      inviteToken: m.invite_token || undefined,
+      dataScope: m.data_scope || 'full',
       createdAt: m.created_at,
     }));
   } catch (err) {
@@ -271,14 +274,17 @@ export async function syncTeamMemberToSupabase(member: TeamMember, organizationI
   if (!orgId) return { success: false, error: 'No active organization ID' };
   
   try {
-    const payload = {
+    const payload: any = {
       id: member.id,
       organization_id: orgId,
       name: member.name,
       email: member.email,
       role: member.role || null,
+      data_scope: member.dataScope || 'full',
       created_at: member.createdAt,
     };
+    if (member.userId) payload.user_id = member.userId;
+    if (member.inviteToken) payload.invite_token = member.inviteToken;
 
     console.log(`[Supabase API Call] Calling team_members.upsert() for member "${member.name}" in org ${orgId}...`);
     const { data, error } = await supabase.from('team_members').upsert(payload).select();
@@ -356,19 +362,120 @@ export async function deleteMeetingGroupFromSupabase(groupId: string): Promise<{
   }
 }
 
-// Sync Task Status Update to Supabase
-export async function syncTaskStatusToSupabase(taskId: string, newStatus: ActionItem['status']): Promise<boolean> {
-  if (!supabase) return false;
+// Sync Task Status Update to Supabase with 42501 Error Handling
+export async function syncTaskStatusToSupabase(taskId: string, newStatus: ActionItem['status']): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase client is not available' };
   try {
     const { error } = await supabase.from('action_items').update({ status: newStatus }).eq('id', taskId);
     if (error) {
+      if (error.code === '42501' || error.message.includes('42501') || error.message.includes('Restricted users')) {
+        console.warn('[Supabase RLS Error 42501]: Restricted users are only permitted to update task status.');
+        return { success: false, error: 'Access Denied: You can only update your assigned task status.' };
+      }
       console.warn('[Supabase Task Status Sync Warning]:', error.message);
-      return false;
+      return { success: false, error: error.message };
     }
-    return true;
+    return { success: true };
   } catch (err: any) {
     console.error('[Supabase Task Update Error]:', err.message);
-    return false;
+    return { success: false, error: err.message };
+  }
+}
+
+// Fetch Organization Members with data_scope from Supabase
+export async function fetchOrganizationMembersFromSupabase(organizationId: string): Promise<any[]> {
+  if (!supabase || !organizationId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('organization_members')
+      .select('id, organization_id, user_id, role, data_scope, created_at')
+      .eq('organization_id', organizationId);
+
+    if (error || !data) return [];
+    return data.map((m: any) => ({
+      id: m.id,
+      organizationId: m.organization_id,
+      userId: m.user_id,
+      role: m.role,
+      dataScope: m.data_scope || 'full',
+      createdAt: m.created_at,
+    }));
+  } catch (err) {
+    return [];
+  }
+}
+
+// Update Team Member & Organization Member Data Scope in Supabase
+export async function updateTeamMemberDataScope(
+  teamMemberId: string,
+  dataScope: 'full' | 'assigned_only',
+  userId?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase client is not available' };
+  try {
+    // 1. Update team_members data_scope
+    const { error: tmErr } = await supabase
+      .from('team_members')
+      .update({ data_scope: dataScope })
+      .eq('id', teamMemberId);
+
+    if (tmErr) {
+      console.error('[Supabase Update team_members DataScope Error]:', tmErr.message);
+      return { success: false, error: tmErr.message };
+    }
+
+    // 2. If user_id exists, update organization_members data_scope as well
+    if (userId) {
+      const { error: omErr } = await supabase
+        .from('organization_members')
+        .update({ data_scope: dataScope })
+        .eq('user_id', userId);
+
+      if (omErr) {
+        console.warn('[Supabase Update organization_members Warning]:', omErr.message);
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Update Organization Member Data Scope in Supabase
+export async function updateOrganizationMemberDataScope(
+  memberId: string, 
+  dataScope: 'full' | 'assigned_only'
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase client is not available' };
+  try {
+    const { error } = await supabase
+      .from('organization_members')
+      .update({ data_scope: dataScope })
+      .eq('id', memberId);
+
+    if (error) {
+      console.error('[Supabase Update DataScope Error]:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Accept Per-Person Invite Token via RPC (Binds user_id to team_members directly)
+export async function acceptPerPersonInviteToken(token: string): Promise<{ success: boolean; organizationMember?: any; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase client is not available' };
+  try {
+    const { data, error } = await supabase.rpc('accept_person_invite', { p_token: token.trim() });
+    if (error) {
+      console.error('[Supabase Accept Person Invite Error]:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, organizationMember: data };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 

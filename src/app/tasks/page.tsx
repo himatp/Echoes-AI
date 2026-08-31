@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { syncTaskStatusToSupabase } from '@/lib/supabase/client';
 
 export default function TaskBoardPage() {
   const { activeOrg } = useAuth();
@@ -59,10 +60,15 @@ export default function TaskBoardPage() {
   }, [activeOrg?.id]);
 
   // Update Task Status with Real-Time Persistence Sync
-  const handleStatusChange = (taskId: string, newStatus: ActionItem['status']) => {
+  const handleStatusChange = async (taskId: string, newStatus: ActionItem['status']) => {
     updateTaskStatus(taskId, newStatus);
     refreshData();
-    showToast(`Task status synced to "${newStatus.replace('_', ' ')}" across Dashboard & Meetings`);
+    const res = await syncTaskStatusToSupabase(taskId, newStatus);
+    if (!res.success && res.error) {
+      showToast(`⚠️ ${res.error}`);
+    } else {
+      showToast(`Task status synced to "${newStatus.replace('_', ' ')}" across Dashboard & Meetings`);
+    }
   };
 
   // Add Quick Task

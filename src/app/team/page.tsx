@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
 import { 
@@ -8,19 +9,21 @@ import {
   getStoredMeetingGroups, saveMeetingGroup, deleteMeetingGroup,
   fetchAndHydrateTeamFromSupabase
 } from '@/lib/store/teamStore';
-import { TeamMember, MeetingGroup } from '@/types';
+import { OrganizationMember, TeamMember, MeetingGroup, DataScope } from '@/types';
 import { 
   Users, UserPlus, FolderPlus, Mail, Shield, Trash2, Edit2, 
-  Sparkles, CheckCircle2, User, Layers, Info, ShieldAlert, AlertTriangle
+  Sparkles, CheckCircle2, User, Layers, Info, ShieldAlert, AlertTriangle, Link as LinkIcon, Lock, Zap, LockKeyhole
 } from 'lucide-react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
+import { fetchOrganizationMembersFromSupabase, updateTeamMemberDataScope } from '@/lib/supabase/client';
 
 export default function TeamPage() {
-  const { activeOrg } = useAuth();
+  const { activeOrg, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'members' | 'groups'>('members');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [groups, setGroups] = useState<MeetingGroup[]>([]);
+  const [orgMembers, setOrgMembers] = useState<OrganizationMember[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Member Modal State
@@ -48,12 +51,43 @@ export default function TeamPage() {
         setMembers(m);
         setGroups(g);
       });
+      fetchOrganizationMembersFromSupabase(activeOrg.id).then((om) => {
+        setOrgMembers(om);
+      });
     }
   }, [activeOrg?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleDataScopeChange = async (member: TeamMember, newScope: DataScope) => {
+    const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && 
+                    orgMembers.some((om) => om.userId === user?.id && om.role === 'owner');
+
+    if (isOwner) {
+      showToast('⚠️ Workspace Owners are forced to Full Workspace Access.');
+      return;
+    }
+
+    const res = await updateTeamMemberDataScope(member.id, newScope, member.userId);
+    if (res.success) {
+      setMembers((prev) => prev.map((m) => m.id === member.id ? { ...m, dataScope: newScope } : m));
+      if (member.userId) {
+        setOrgMembers((prev) => prev.map((om) => om.userId === member.userId ? { ...om, dataScope: newScope } : om));
+      }
+      showToast(`Data access level for ${member.name} updated to "${newScope === 'full' ? 'Full Access' : 'Assigned Items Only'}"`);
+    } else {
+      showToast(`Failed to update data scope: ${res.error}`);
+    }
+  };
+
+  const handleCopyInviteLink = (member: TeamMember) => {
+    const token = member.inviteToken || member.id;
+    const inviteUrl = `${window.location.origin}/invite/${token}`;
+    navigator.clipboard.writeText(inviteUrl);
+    showToast(`Copied per-person invite link for ${member.name}! (Restricted Access default)`);
   };
 
   // Member Handlers
@@ -263,54 +297,187 @@ export default function TeamPage() {
         {/* TAB 1: TEAM MEMBERS DIRECTORY */}
         {activeTab === 'members' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {members.map((member) => (
-              <div 
-                key={member.id}
-                className="card-white p-5 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500 transition-all group"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-extrabold flex items-center justify-center text-sm uppercase shadow-sm">
-                        {member.name.slice(0, 2)}
+            {members.map((member) => {
+              const om = orgMembers.find((m) => (member.userId && m.userId === member.userId) || m.userId === member.id);
+              const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && 
+                              orgMembers.some((m) => m.userId === user?.id && m.role === 'owner');
+              const currentScope: DataScope = isOwner ? 'full' : (member.dataScope || om?.dataScope || 'full');
+
+              return (
+                <div 
+                  key={member.id}
+                  className="card-white p-5 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500 transition-all group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-extrabold flex items-center justify-center text-sm uppercase shadow-sm">
+                          {member.name.slice(0, 2)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-sm text-zinc-900 dark:text-white leading-snug">{member.name}</h3>
+                            {member.isDemo && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[9px] font-bold">
+                                Demo
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">{member.role || 'Team Member'}</span>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-bold text-sm text-zinc-900 dark:text-white leading-snug">{member.name}</h3>
-                        <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">{member.role || 'Team Member'}</span>
+
+                      {/* Top-Right Icon Action Bar */}
+                      <div className="flex items-center gap-1.5">
+                        {/* Copy Invite Link Icon */}
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleCopyInviteLink(member)}
+                          className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-600 dark:text-indigo-300 flex items-center justify-center transition-colors shadow-sm"
+                          title="Copy per-person invite link (Restricted Scope)"
+                          aria-label="Copy per-person invite link"
+                        >
+                          <LinkIcon className="w-4 h-4" />
+                        </motion.button>
+
+                        {/* Edit Member Icon */}
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleOpenMemberModal(member)}
+                          className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center justify-center transition-colors shadow-sm"
+                          title="Edit Member Details"
+                          aria-label="Edit Member Details"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </motion.button>
+
+                        {/* Delete Member Icon */}
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleDeleteMember(member.id, member.name)}
+                          className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/70 text-red-600 dark:text-red-400 flex items-center justify-center transition-colors shadow-sm"
+                          title="Delete Member"
+                          aria-label="Delete Member"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </motion.button>
                       </div>
                     </div>
 
-                    {member.isDemo && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
-                        Demo Contact
-                      </span>
-                    )}
-                  </div>
+                    <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800 text-xs font-mono text-zinc-600 dark:text-zinc-300 flex items-center gap-2 mb-3">
+                      <Mail className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                      <span className="truncate">{member.email}</span>
+                    </div>
 
-                  <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800 text-xs font-mono text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                    <span className="truncate">{member.email}</span>
+                    {/* Compact & Mobile-Friendly Data Access Switch */}
+                    <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200/80 dark:border-zinc-800/90 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Shield className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Data Scope</span>
+                          
+                          {isOwner ? (
+                            <motion.span 
+                              whileHover={{ scale: 1.05, rotate: [0, -4, 4, 0] }}
+                              transition={{ duration: 0.3 }}
+                              className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-600 dark:text-amber-400 truncate cursor-help group/lock"
+                              title="Workspace Owners are permanently assigned Full Workspace Access"
+                            >
+                              <Lock className="w-3 h-3 text-amber-500 group-hover/lock:rotate-12 transition-transform" />
+                              Forced Full Access
+                            </motion.span>
+                          ) : (
+                            <motion.span
+                              key={currentScope}
+                              initial={{ opacity: 0, x: -3 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              className={`inline-flex items-center gap-1 text-[11px] font-extrabold transition-colors duration-200 ${
+                                currentScope === 'full'
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                            >
+                              {currentScope === 'full' ? (
+                                <>
+                                  <Zap className="w-3 h-3 text-emerald-500 animate-pulse" />
+                                  Full Workspace Access
+                                </>
+                              ) : (
+                                <>
+                                  <LockKeyhole className="w-3 h-3 text-amber-500" />
+                                  Assigned Items Only
+                                </>
+                              )}
+                            </motion.span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Dribbble Fluid Elastic Toggle Switch Track */}
+                      <motion.button
+                        type="button"
+                        disabled={isOwner}
+                        onClick={() => handleDataScopeChange(member, currentScope === 'full' ? 'assigned_only' : 'full')}
+                        whileTap={{ scale: isOwner ? 1 : 0.92 }}
+                        whileHover={{ scale: isOwner ? 1 : 1.06 }}
+                        aria-label="Toggle Data Scope Access Level"
+                        className={`relative inline-flex h-8 w-14 flex-shrink-0 items-center rounded-full p-1 border transition-colors duration-300 focus:outline-none overflow-hidden ${
+                          isOwner
+                            ? 'bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 cursor-not-allowed opacity-80'
+                            : currentScope === 'full'
+                            ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 border-emerald-400/80 shadow-lg shadow-emerald-500/25'
+                            : 'bg-zinc-800 dark:bg-zinc-800/90 border-zinc-600 dark:border-zinc-700 shadow-inner'
+                        }`}
+                      >
+                        {/* Animated Dribbble Radial Burst Glow Ripple */}
+                        <motion.span
+                          key={`ripple-${currentScope}`}
+                          initial={{ scale: 0.2, opacity: 0.8 }}
+                          animate={{ scale: 2.5, opacity: 0 }}
+                          transition={{ duration: 0.45, ease: 'easeOut' }}
+                          className={`absolute inset-0 rounded-full pointer-events-none ${
+                            currentScope === 'full' ? 'bg-emerald-400/40' : 'bg-amber-500/30'
+                          }`}
+                        />
+
+                        {/* Fluid Elastic Morphing Knob */}
+                        <motion.span
+                          initial={false}
+                          animate={{
+                            x: currentScope === 'full' ? 24 : 0,
+                            scaleX: [1, 1.35, 1],
+                            scaleY: [1, 0.75, 1],
+                          }}
+                          transition={{ 
+                            type: 'spring', 
+                            stiffness: 500, 
+                            damping: 22, 
+                            mass: 0.8 
+                          }}
+                          className="pointer-events-none relative z-10 inline-block h-6 w-6 rounded-full bg-white shadow-xl flex items-center justify-center"
+                        >
+                          <motion.div
+                            key={`icon-${currentScope}`}
+                            initial={{ rotate: currentScope === 'full' ? -180 : 180, scale: 0.5, opacity: 0 }}
+                            animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                            transition={{ type: 'spring', stiffness: 600, damping: 25 }}
+                          >
+                            {currentScope === 'full' ? (
+                              <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500" />
+                            ) : (
+                              <LockKeyhole className="w-3.5 h-3.5 text-amber-600" />
+                            )}
+                          </motion.div>
+                        </motion.span>
+                      </motion.button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <button
-                    onClick={() => handleOpenMemberModal(member)}
-                    className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold transition-colors flex items-center gap-1"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Edit</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleDeleteMember(member.id, member.name)}
-                    className="p-1.5 rounded-lg bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 text-xs font-bold transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

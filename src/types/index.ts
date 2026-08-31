@@ -1,6 +1,8 @@
 export type Priority = 'urgent' | 'high' | 'medium' | 'low';
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed';
 
+export type DataScope = 'full' | 'assigned_only';
+
 export interface Organization {
   id: string;
   name: string;
@@ -14,15 +16,19 @@ export interface OrganizationMember {
   organizationId: string;
   userId: string;
   role: 'owner' | 'admin' | 'member';
+  dataScope?: DataScope;
   createdAt: string;
 }
 
 export interface TeamMember {
   id: string;
   organizationId?: string;
+  userId?: string;
   name: string;
   email: string;
   role?: string;
+  inviteToken?: string;
+  dataScope?: DataScope;
   isDemo?: boolean;
   createdAt: string;
 }
