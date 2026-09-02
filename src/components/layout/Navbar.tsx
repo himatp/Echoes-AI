@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { 
   Mic, LayoutDashboard, CheckSquare, Video, Sun, Moon, Users, 
-  Menu, X, LogOut, UserPlus, Plus, User 
+  Menu, X, LogOut, UserPlus, Plus, User, KeyRound, DoorOpen, Trash2 
 } from 'lucide-react';
 import { PillBadge } from '../ui/PillBadge';
 import { UserAvatar } from '../ui/UserAvatar';
@@ -14,18 +14,43 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '../auth/AuthProvider';
 import { InviteModal } from '../auth/InviteModal';
 import { CreateOrgModal } from '../auth/CreateOrgModal';
+import { JoinOrgModal } from '../auth/JoinOrgModal';
+import { fetchPersonalMemberWorkspaceData, leaveOrganizationFromSupabase, deleteOrganizationFromSupabase } from '@/lib/supabase/client';
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
-  const { user, activeOrg, userOrgs, switchOrg, signOut } = useAuth();
+  const { user, activeOrg, userOrgs, switchOrg, signOut, refreshOrgs } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
+  const [isJoinOrgModalOpen, setIsJoinOrgModalOpen] = useState(false);
+
+  // Diagnostic Popup Banner State
+  const [deleteDiagnostic, setDeleteDiagnostic] = useState<{
+    title: string;
+    message: string;
+    details?: string;
+    success: boolean;
+  } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (!isOwnerOrAdmin) {
+          setIsRestrictedMember(true);
+        } else {
+          setIsRestrictedMember(false);
+        }
+      });
+    }
+  }, [user?.id, activeOrg?.id]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -40,13 +65,90 @@ export const Navbar: React.FC = () => {
     };
   }, []);
 
-  const navLinks = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/new-meeting', label: 'Live Recorder', icon: Mic },
-    { href: '/tasks', label: 'Task Board', icon: CheckSquare },
-    { href: '/meetings', label: 'All Meetings', icon: Video },
-    { href: '/team', label: 'Team & Groups', icon: Users },
-  ];
+  const handleLeaveWorkspace = async (e: React.MouseEvent, orgId: string, orgName: string) => {
+    e.stopPropagation();
+    if (!user?.id) return;
+    if (!confirm(`Are you sure you want to leave workspace "${orgName}"? You will lose access to its meetings and tasks.`)) {
+      return;
+    }
+
+    const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
+    const res = await leaveOrganizationFromSupabase(orgId, user.id);
+    if (res.success) {
+      if (remainingOrgs.length > 0) {
+        switchOrg(remainingOrgs[0].id);
+      }
+      await refreshOrgs();
+      setIsDropdownOpen(false);
+      setDeleteDiagnostic({
+        title: 'Workspace Left',
+        message: `Successfully left workspace "${orgName}".`,
+        success: true,
+      });
+    } else {
+      setDeleteDiagnostic({
+        title: 'Failed to Leave Workspace',
+        message: res.error || 'Failed to leave workspace.',
+        details: res.error,
+        success: false,
+      });
+    }
+  };
+
+  const handleDeleteWorkspace = async (e: React.MouseEvent, orgId: string, orgName: string) => {
+    e.stopPropagation();
+    if (!user?.id) return;
+    if (!confirm(`Are you sure you want to permanently delete workspace "${orgName}"? This will delete all meetings and tasks inside this workspace.`)) {
+      return;
+    }
+
+    console.log(`🚀 [Navbar Action] Triggering deletion of workspace "${orgName}" (${orgId}) for user ${user.id}`);
+    
+    const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
+    const res = await deleteOrganizationFromSupabase(orgId, user.id);
+    console.log('🏁 [Navbar Action] deleteOrganizationFromSupabase result:', res);
+
+    if (res.success) {
+      // Save to persistent local deletion list only upon verified DB deletion
+      try {
+        const existing = JSON.parse(localStorage.getItem('echoes_deleted_workspace_ids') || '[]');
+        if (!existing.includes(orgId)) {
+          existing.push(orgId);
+          localStorage.setItem('echoes_deleted_workspace_ids', JSON.stringify(existing));
+        }
+      } catch (e) {}
+
+      if (remainingOrgs.length > 0) {
+        switchOrg(remainingOrgs[0].id);
+      }
+      await refreshOrgs();
+      setIsDropdownOpen(false);
+
+      setDeleteDiagnostic({
+        title: 'Workspace Deleted & Verified',
+        message: `Workspace "${orgName}" has been permanently purged and verified from Supabase DB.`,
+        details: res.diagnosticDetails || 'Database row and all associated child resources cleared.',
+        success: true,
+      });
+    } else {
+      setDeleteDiagnostic({
+        title: 'Workspace Deletion Failed',
+        message: res.error || `Could not delete workspace "${orgName}".`,
+        details: res.diagnosticDetails || res.error || 'Server-side post-deletion verification failed.',
+        success: false,
+      });
+    }
+  };
+
+  const navLinks = isRestrictedMember
+    ? []
+    : [
+        { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+        { href: '/new-meeting', label: 'Live Recorder', icon: Mic },
+        { href: '/tasks', label: 'Task Board', icon: CheckSquare },
+        { href: '/meetings', label: 'All Meetings', icon: Video },
+        { href: '/team', label: 'Team & Groups', icon: Users },
+      ];
 
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
   const userInitial = (user?.user_metadata?.full_name || user?.email || 'U')[0].toUpperCase();
@@ -69,11 +171,13 @@ export const Navbar: React.FC = () => {
                 priority
               />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-extrabold text-lg sm:text-xl tracking-tight text-zinc-900 dark:text-white">Echoes</span>
-                <span className="hidden sm:inline-flex">
-                  <PillBadge label="AI 2.0" variant="ai" size="sm" />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-base sm:text-lg tracking-tight text-zinc-900 dark:text-white">
+                  Echoes
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                  AI 2.0
                 </span>
               </div>
             </div>
@@ -81,26 +185,28 @@ export const Navbar: React.FC = () => {
         </div>
 
         {/* Center: Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center gap-1 bg-white dark:bg-[#1C1C21] px-2 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm transition-colors duration-300">
-          {navLinks.map((link) => {
-            const Icon = link.icon;
-            const isActive = pathname === link.href;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold min-h-[44px] transition-all ${
-                  isActive
-                    ? 'bg-zinc-900 dark:bg-indigo-600 text-white shadow-sm'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-400 dark:text-indigo-200' : 'text-zinc-500 dark:text-zinc-400'}`} />
-                {link.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {navLinks.length > 0 && (
+          <nav className="hidden md:flex items-center gap-1 bg-white dark:bg-[#1C1C21] px-2 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm transition-colors duration-300">
+            {navLinks.map((link) => {
+              const Icon = link.icon;
+              const isActive = pathname === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold min-h-[44px] transition-all ${
+                    isActive
+                      ? 'bg-zinc-900 dark:bg-indigo-600 text-white shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-400 dark:text-indigo-200' : 'text-zinc-500 dark:text-zinc-400'}`} />
+                  {link.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         {/* Right Side: Theme Toggle, CTA, and Far-Right Profile Circle Dropdown Trigger */}
         <div className="flex items-center gap-2 sm:gap-3">
@@ -119,15 +225,17 @@ export const Navbar: React.FC = () => {
             </div>
           </button>
 
-          {/* New Meeting CTA */}
-          <Link
-            href="/new-meeting"
-            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 min-h-[40px] sm:min-h-[44px] rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-hero hover:bg-indigo-700 active:scale-95 transition-all"
-          >
-            <Mic className="w-4 h-4 flex-shrink-0" />
-            <span className="hidden sm:inline">New Meeting</span>
-            <span className="sm:hidden">New</span>
-          </Link>
+          {/* New Meeting CTA (Hidden for Restricted Teammates) */}
+          {!isRestrictedMember && (
+            <Link
+              href="/new-meeting"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 min-h-[40px] sm:min-h-[44px] rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-hero hover:bg-indigo-700 active:scale-95 transition-all"
+            >
+              <Mic className="w-4 h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">New Meeting</span>
+              <span className="sm:hidden">New</span>
+            </Link>
+          )}
 
           {/* PROFILE CIRCLE / SIGN IN TRIGGER */}
           {!user ? (
@@ -189,20 +297,52 @@ export const Navbar: React.FC = () => {
                       {userOrgs.map((org) => {
                         const isActive = activeOrg && org.id === activeOrg.id;
                         return (
-                          <button
+                          <div
                             key={org.id}
                             onClick={() => {
                               switchOrg(org.id);
                               setIsDropdownOpen(false);
                             }}
-                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between gap-2 transition-all ${
+                            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between gap-2 transition-all cursor-pointer ${
                               isActive
                                 ? 'bg-indigo-600 text-white font-bold shadow-sm'
                                 : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                             }`}
                           >
-                            <span className="truncate">{org.name}</span>
-                          </button>
+                            <span className="truncate flex-1">{org.name}</span>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {isActive && (
+                                <span className="text-[10px] opacity-90 font-mono">
+                                  {isRestrictedMember ? '🔒 Assigned' : '👑 Owner'}
+                                </span>
+                              )}
+                              {userOrgs.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const isCurrentRestricted = isActive && isRestrictedMember;
+                                    if (isCurrentRestricted) {
+                                      handleLeaveWorkspace(e, org.id, org.name);
+                                    } else {
+                                      handleDeleteWorkspace(e, org.id, org.name);
+                                    }
+                                  }}
+                                  className={`p-1 rounded-lg transition-colors ${
+                                    isActive
+                                      ? 'hover:bg-indigo-700 text-indigo-200 hover:text-white'
+                                      : 'hover:bg-red-500/20 text-zinc-400 hover:text-red-500'
+                                  }`}
+                                  title={isActive && isRestrictedMember ? `Leave ${org.name}` : `Delete ${org.name}`}
+                                >
+                                  {isActive && isRestrictedMember ? (
+                                    <DoorOpen className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -213,15 +353,27 @@ export const Navbar: React.FC = () => {
 
                   {/* SECTION 3 — Workspace Actions */}
                   <div className="space-y-1">
+                    {!isRestrictedMember && (
+                      <button
+                        onClick={() => {
+                          setIsDropdownOpen(false);
+                          setIsInviteModalOpen(true);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>Invite teammates</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setIsDropdownOpen(false);
-                        setIsInviteModalOpen(true);
+                        setIsJoinOrgModalOpen(true);
                       }}
                       className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors"
                     >
-                      <UserPlus className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>Invite teammates</span>
+                      <KeyRound className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Join workspace by code</span>
                     </button>
                     <button
                       onClick={() => {
@@ -330,7 +482,7 @@ export const Navbar: React.FC = () => {
         </>
       )}
 
-      {/* Teammate Invite & Workspace Creation Modals */}
+      {/* Teammate Invite, Join, & Workspace Creation Modals */}
       <InviteModal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
@@ -339,6 +491,42 @@ export const Navbar: React.FC = () => {
         isOpen={isCreateOrgModalOpen}
         onClose={() => setIsCreateOrgModalOpen(false)}
       />
+      <JoinOrgModal
+        isOpen={isJoinOrgModalOpen}
+        onClose={() => setIsJoinOrgModalOpen(false)}
+      />
+
+      {/* Diagnostic Report Popup */}
+      {deleteDiagnostic && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="max-w-lg w-full p-6 rounded-3xl bg-white dark:bg-[#1C1C21] border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className={`text-base font-extrabold flex items-center gap-2 ${deleteDiagnostic.success ? 'text-emerald-600' : 'text-red-500'}`}>
+                {deleteDiagnostic.success ? 'Workspace Operation Successful' : 'Workspace Deletion Diagnostic Report'}
+              </h3>
+              <button onClick={() => setDeleteDiagnostic(null)} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-lg font-bold">✕</button>
+            </div>
+
+            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              {deleteDiagnostic.message}
+            </p>
+
+            {deleteDiagnostic.details && (
+              <div className="p-3.5 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 font-mono text-[11px] text-red-600 dark:text-red-400 break-all space-y-1.5">
+                <span className="font-bold block text-zinc-500 dark:text-zinc-400 uppercase text-[9px] tracking-wider">Exact Diagnostic Cause & Trace:</span>
+                <p>{deleteDiagnostic.details}</p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setDeleteDiagnostic(null)}
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors"
+            >
+              Dismiss Diagnostic Report
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

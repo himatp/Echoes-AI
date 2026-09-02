@@ -8,15 +8,33 @@ import { Meeting } from '@/types';
 import { Video, Search, Mic, ArrowRight, ShieldCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
+import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function MeetingsListPage() {
-  const { activeOrg } = useAuth();
+  const { user, activeOrg } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
+  const [portalData, setPortalData] = useState<any>(null);
 
   const refreshMeetings = () => {
     setMeetings(getStoredMeetings());
   };
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (!isOwnerOrAdmin) {
+          setIsRestrictedMember(true);
+          setPortalData(data);
+        } else {
+          setIsRestrictedMember(false);
+        }
+      });
+    }
+  }, [user?.id, activeOrg?.id]);
 
   useEffect(() => {
     refreshMeetings();
@@ -26,6 +44,17 @@ export default function MeetingsListPage() {
       });
     }
   }, [activeOrg?.id]);
+
+  if (isRestrictedMember) {
+    return (
+      <MemberPortalView
+        initialMeetings={portalData?.meetings || []}
+        initialActionItems={portalData?.actionItems || []}
+        initialTeamMember={portalData?.teamMember}
+        initialOrgMember={portalData?.organizationMember}
+      />
+    );
+  }
 
   const handleDeleteMeeting = (e: React.MouseEvent, mtgId: string, title: string) => {
     e.preventDefault();

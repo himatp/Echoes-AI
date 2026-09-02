@@ -14,7 +14,7 @@ import {
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { safeParseJsonResponse } from '@/lib/api/safeFetch';
-import { syncTaskStatusToSupabase } from '@/lib/supabase/client';
+import { syncTaskStatusToSupabase, fetchMeetingByIdFromSupabase } from '@/lib/supabase/client';
 
 export default function MeetingDetailPage() {
   const router = useRouter();
@@ -71,7 +71,7 @@ export default function MeetingDetailPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [durationSec, setDurationSec] = useState<number>(0);
 
-  // Fetch Meeting Data
+  // Fetch Meeting Data (Local store first, then live Supabase DB fallback)
   useEffect(() => {
     if (meetingId) {
       const data = getMeetingById(meetingId);
@@ -86,8 +86,23 @@ export default function MeetingDetailPage() {
           }
         }
       } else {
-        const fallback = getMeetingById('demo-1');
-        if (fallback) setMeeting(fallback);
+        // Fetch from Supabase remote DB directly
+        fetchMeetingByIdFromSupabase(meetingId).then((remoteData) => {
+          if (remoteData) {
+            setMeeting(remoteData);
+            if (remoteData.speakerSegments && remoteData.speakerSegments.length > 0) {
+              const lastSeg = remoteData.speakerSegments[remoteData.speakerSegments.length - 1];
+              const parts = lastSeg.timestamp.split(':');
+              if (parts.length === 2) {
+                const secs = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + 10;
+                setDurationSec(secs);
+              }
+            }
+          } else {
+            const fallback = getMeetingById('demo-1');
+            if (fallback) setMeeting(fallback);
+          }
+        });
       }
     }
   }, [meetingId]);

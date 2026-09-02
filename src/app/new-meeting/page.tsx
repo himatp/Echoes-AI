@@ -8,7 +8,7 @@ import { AudioWaveform } from '@/components/ui/AudioWaveform';
 import { transcribeAudio, processMeetingWithAI, pollTranscriptionStatus } from '@/lib/api/meetingApi';
 import { saveMeeting, getStoredMeetings, getMeetingById, updateMeetingStatus } from '@/lib/store/localStore';
 import { getStoredTeamMembers, getStoredMeetingGroups } from '@/lib/store/teamStore';
-import { uploadAudioToSupabaseStorage } from '@/lib/supabase/client';
+import { uploadAudioToSupabaseStorage, fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
 import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 import { SpeakerSegment, Meeting, ActionItem, TeamMember, MeetingGroup } from '@/types';
 import { matchSpeakerToMember } from '@/lib/matching/speakerMatcher';
@@ -26,7 +26,7 @@ Marcus Vance: I will handle the Google Calendar sync integration for team meetin
 
 function NewMeetingContent() {
   const router = useRouter();
-  const { activeOrg, isLoading: isAuthLoading } = useAuth();
+  const { user, activeOrg, isLoading: isAuthLoading } = useAuth();
   const [meetingTitle, setMeetingTitle] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [transcriptText, setTranscriptText] = useState('');
@@ -173,6 +173,7 @@ function NewMeetingContent() {
   const rawAudioBlobRef = useRef<Blob | null>(null);
   const activeMeetingIdRef = useRef<string | null>(null);
   const activeAudioUrlRef = useRef<string | null>(null);
+  const lastProcessedTranscriptRef = useRef<string | null>(null);
   const searchParams = useSearchParams();
   const resumeId = searchParams?.get('resumeId');
   const [resumedMeeting, setResumedMeeting] = useState<Meeting | null>(null);
@@ -240,6 +241,18 @@ function NewMeetingContent() {
 
   const autoTriggeredRef = useRef(false);
 
+  // Role Guard: Redirect invited teammates away from Live Recorder
+  useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (data.dataScope === 'assigned_only' && !isOwnerOrAdmin) {
+          router.push('/');
+        }
+      });
+    }
+  }, [user?.id, router]);
+
   // Handle Resuming an Uploaded/Transcribed Meeting & Automatically Start Processing Pipeline
   useEffect(() => {
     if (resumeId && !autoTriggeredRef.current) {
@@ -250,8 +263,16 @@ function NewMeetingContent() {
         setMeetingTitle(existing.title);
         setUploadedFileName(existing.title);
         setResumedMeeting(existing);
+
+        // Populate speaker segments AND clean continuous transcript text area!
         if (existing.speakerSegments && existing.speakerSegments.length > 0) {
           setDiarizedSegments(existing.speakerSegments);
+          const cleanContinuousTranscript = existing.speakerSegments
+            .map((s) => s.text.trim())
+            .filter(Boolean)
+            .join(' ');
+          setTranscriptText(cleanContinuousTranscript);
+          lastProcessedTranscriptRef.current = cleanContinuousTranscript.trim();
         }
 
         // If meeting is in uploaded, transcribed, or draft state, automatically trigger the processing pipeline!
@@ -548,6 +569,15 @@ function NewMeetingContent() {
       segmentsToProcess = diarizeRes.segments;
       if (diarizeRes.warning) setEngineWarning(diarizeRes.warning);
 
+      // Automatically sync clean continuous text to the transcript text area if empty!
+      if (!transcriptText.trim()) {
+        const cleanContinuousTranscript = diarizeRes.segments
+          .map((s) => s.text.trim())
+          .filter(Boolean)
+          .join(' ');
+        setTranscriptText(cleanContinuousTranscript);
+      }
+
       // Auto-save Stage 2 draft with status: 'transcribed'
       const stage2Title = meetingTitle.trim() || uploadedFileName?.replace(/\.[^/.]+$/, '') || 'Transcribed Meeting';
       await autoSaveTranscribedStage(activeAudioUrlRef.current || undefined, stage2Title, diarizeRes.segments);
@@ -654,6 +684,7 @@ function NewMeetingContent() {
     console.log(`[Stage 2 Auto-Save] Updating existing meeting ${aiRes.meeting.id} with status='draft'...`);
     saveMeeting(aiRes.meeting);
     setProcessedMeeting(aiRes.meeting);
+    lastProcessedTranscriptRef.current = transcriptText.trim();
   };
 
   return (
@@ -1071,27 +1102,59 @@ function NewMeetingContent() {
                 className="w-full p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-sans"
               />
 
-              <button
-                onClick={handleStartPipeline}
-                disabled={isDiarizing || isExtracting || isAuthLoading || !activeOrg?.id}
-                className="w-full mt-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-hero flex items-center justify-center gap-2 transition-all min-h-[44px]"
-              >
-                {isAuthLoading ? (
-                  <span>Resolving workspace session...</span>
-                ) : !activeOrg?.id ? (
-                  <span>No Active Workspace — Select/Join Workspace to Save</span>
-                ) : isDiarizing ? (
-                  <span>1/2 Transcribing audio & identifying speakers...</span>
-                ) : isExtracting ? (
-                  <span>2/2 Generating summaries & tasks...</span>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-indigo-200" />
-                    <span>Process Meeting & Save Notes</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {(() => {
+                const isTranscriptDirty = Boolean(
+                  processedMeeting &&
+                  lastProcessedTranscriptRef.current !== null &&
+                  transcriptText.trim() !== lastProcessedTranscriptRef.current.trim()
+                );
+
+                const isProcessedAndClean = Boolean(processedMeeting) && !isTranscriptDirty;
+
+                return (
+                  <button
+                    onClick={handleStartPipeline}
+                    disabled={isDiarizing || isExtracting || isAuthLoading || !activeOrg?.id || isProcessedAndClean}
+                    className={`w-full mt-4 py-3 rounded-xl font-bold text-xs shadow-hero flex items-center justify-center gap-2 transition-all min-h-[44px] ${
+                      isAuthLoading || !activeOrg?.id
+                        ? 'bg-indigo-600 opacity-50 text-white cursor-not-allowed'
+                        : isDiarizing || isExtracting
+                        ? 'bg-indigo-600 text-white animate-pulse'
+                        : isProcessedAndClean
+                        ? 'bg-emerald-500/10 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 cursor-default opacity-85'
+                        : isTranscriptDirty
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-lg'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    {isAuthLoading ? (
+                      <span>Resolving workspace session...</span>
+                    ) : !activeOrg?.id ? (
+                      <span>No Active Workspace — Select/Join Workspace to Save</span>
+                    ) : isDiarizing ? (
+                      <span>1/2 Transcribing audio & identifying speakers...</span>
+                    ) : isExtracting ? (
+                      <span>2/2 Generating summaries & tasks...</span>
+                    ) : isProcessedAndClean ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        <span>✓ Notes & Tasks Extracted</span>
+                      </>
+                    ) : isTranscriptDirty ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 text-indigo-200 flex-shrink-0" />
+                        <span>Re-process Updated Transcript ↺</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-indigo-200 flex-shrink-0" />
+                        <span>Process Meeting & Save Notes</span>
+                        <ArrowRight className="w-4 h-4 flex-shrink-0" />
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
             </div>
           </div>
 

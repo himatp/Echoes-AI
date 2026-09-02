@@ -13,13 +13,18 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { syncTaskStatusToSupabase } from '@/lib/supabase/client';
+import { syncTaskStatusToSupabase, fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
+import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function TaskBoardPage() {
-  const { activeOrg } = useAuth();
+  const { user, activeOrg } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [tasks, setTasks] = useState<ActionItem[]>([]);
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+
+  // Restricted Portal View State
+  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
+  const [portalData, setPortalData] = useState<any>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,6 +54,20 @@ export default function TaskBoardPage() {
   };
 
   useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (!isOwnerOrAdmin) {
+          setIsRestrictedMember(true);
+          setPortalData(data);
+        } else {
+          setIsRestrictedMember(false);
+        }
+      });
+    }
+  }, [user?.id, activeOrg?.id]);
+
+  useEffect(() => {
     refreshData();
     if (activeOrg?.id) {
       fetchAndHydrateMeetingsFromSupabase(activeOrg.id).then((hydrated) => {
@@ -59,8 +78,25 @@ export default function TaskBoardPage() {
     }
   }, [activeOrg?.id]);
 
-  // Update Task Status with Real-Time Persistence Sync
+  // Update Task Status with Real-Time Persistence Sync & Ownership Validation
   const handleStatusChange = async (taskId: string, newStatus: ActionItem['status']) => {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (isRestrictedMember && targetTask) {
+      const memberId = portalData?.teamMember?.id;
+      const memberName = portalData?.teamMember?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
+      
+      const isAssignedToMe = (memberId && targetTask.linkedMemberId === memberId) ||
+        (memberName && (
+          targetTask.assignee?.toLowerCase() === memberName.toLowerCase() ||
+          targetTask.unlinkedSpeaker?.toLowerCase() === memberName.toLowerCase()
+        ));
+
+      if (!isAssignedToMe) {
+        showToast(`🔒 Read-Only: You can only edit tasks assigned to you (${memberName}).`);
+        return;
+      }
+    }
+
     updateTaskStatus(taskId, newStatus);
     refreshData();
     const res = await syncTaskStatusToSupabase(taskId, newStatus);

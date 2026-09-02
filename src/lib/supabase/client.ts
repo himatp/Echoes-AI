@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
-import { Meeting, ActionItem, TeamMember, MeetingGroup } from '@/types';
+import { Meeting, ActionItem, TeamMember, MeetingGroup, OrganizationMember } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -125,29 +125,120 @@ export async function fetchMeetingsFromSupabase(organizationId: string): Promise
   }
 }
 
-// Fetch Team Members directly from Supabase DB for active organization
+// Fetch Team Members directly from Supabase DB for active organization with fallback for unassigned/legacy members
 export async function fetchTeamMembersFromSupabase(organizationId: string): Promise<TeamMember[]> {
   if (!supabase || !organizationId) return [];
   try {
+    // 1. Fetch team members matching org OR with null/empty org_id
     const { data, error } = await supabase
       .from('team_members')
       .select('*')
+      .or(`organization_id.eq.${organizationId},organization_id.is.null`);
+
+    let members: TeamMember[] = [];
+    if (!error && data) {
+      members = data.map((m: any) => ({
+        id: m.id,
+        organizationId: m.organization_id || organizationId,
+        userId: m.user_id || undefined,
+        name: m.name,
+        email: m.email,
+        role: m.role || undefined,
+        inviteToken: m.invite_token || undefined,
+        dataScope: m.data_scope || 'full',
+        createdAt: m.created_at,
+      }));
+    }
+
+    // 2. Also fetch organization_members to ensure any newly joined teammate via Google Auth is included (excluding Workspace Owner)
+    const { data: omData } = await supabase
+      .from('organization_members')
+      .select('*')
       .eq('organization_id', organizationId);
 
-    if (error || !data) return [];
-    return data.map((m: any) => ({
-      id: m.id,
-      organizationId: m.organization_id,
-      userId: m.user_id || undefined,
-      name: m.name,
-      email: m.email,
-      role: m.role || undefined,
-      inviteToken: m.invite_token || undefined,
-      dataScope: m.data_scope || 'full',
-      createdAt: m.created_at,
-    }));
+    if (omData && omData.length > 0) {
+      omData.forEach((om: any) => {
+        if (om.role === 'owner') return; // Skip workspace owner duplicate card
+        const exists = members.some((m) => m.userId === om.user_id || (om.email && m.email === om.email));
+        if (!exists && om.user_id) {
+          members.push({
+            id: `tm-${om.user_id}`,
+            organizationId: organizationId,
+            userId: om.user_id,
+            name: om.email ? om.email.split('@')[0] : 'Teammate',
+            email: om.email || '',
+            role: om.role || 'Member',
+            dataScope: om.data_scope || 'assigned_only',
+            createdAt: om.created_at || new Date().toISOString(),
+          });
+        }
+      });
+    }
+
+    // 3. Filter out any legacy dummy "Teammate" owner cards
+    return members.filter((m) => m.name !== 'Teammate' && m.role !== 'owner');
   } catch (err) {
     return [];
+  }
+}
+
+// Fetch single meeting by ID from Supabase DB with its action items
+export async function fetchMeetingByIdFromSupabase(meetingId: string): Promise<Meeting | null> {
+  if (!supabase || !meetingId) return null;
+  try {
+    const { data: mtg, error: mtgErr } = await supabase
+      .from('meetings')
+      .select('*')
+      .eq('id', meetingId)
+      .limit(1)
+      .maybeSingle();
+
+    if (mtgErr || !mtg) {
+      console.warn('[fetchMeetingByIdFromSupabase Warning]:', mtgErr?.message || 'Meeting not found');
+      return null;
+    }
+
+    // Fetch action items for this meeting
+    const { data: tasks } = await supabase
+      .from('action_items')
+      .select('*')
+      .eq('meeting_id', meetingId);
+
+    const actionItems: ActionItem[] = (tasks || []).map((i: any) => ({
+      id: i.id,
+      meetingId: i.meeting_id,
+      organizationId: i.organization_id,
+      title: i.title,
+      assignee: i.assignee,
+      priority: i.priority,
+      status: i.status,
+      dueDate: i.due_date,
+      speakerSource: i.speaker_source,
+      linkedMemberId: i.linked_member_id,
+      unlinkedSpeaker: i.unlinked_speaker,
+    }));
+
+    return {
+      id: mtg.id,
+      organizationId: mtg.organization_id,
+      title: mtg.title,
+      date: mtg.date,
+      duration: mtg.duration,
+      sentiment: mtg.sentiment,
+      summary: mtg.summary,
+      keyDecisions: mtg.key_decisions || [],
+      actionItems,
+      speakerSegments: mtg.speaker_segments || [],
+      healthScore: mtg.health_score || { score: 90, talkTimeBalance: 90, decisionDensity: 90, unassignedPenalty: 0, suggestions: [] },
+      language: mtg.language,
+      status: mtg.status || 'completed',
+      audioUrl: mtg.audio_url,
+      attendeeIds: mtg.attendee_ids || [],
+      createdAt: mtg.created_at,
+    };
+  } catch (err: any) {
+    console.error('[fetchMeetingByIdFromSupabase Error]:', err.message);
+    return null;
   }
 }
 
@@ -495,3 +586,395 @@ export async function deleteMeetingFromSupabase(meetingId: string): Promise<bool
     return false;
   }
 }
+
+// Fetch Personal Member Workspace Data for Restricted Portal View
+export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrgId?: string): Promise<{
+  teamMember?: TeamMember;
+  organizationMember?: OrganizationMember;
+  meetings: Meeting[];
+  actionItems: ActionItem[];
+  dataScope: 'full' | 'assigned_only';
+  accessRevoked?: boolean;
+}> {
+  if (!supabase || !userId) {
+    return { meetings: [], actionItems: [], dataScope: 'assigned_only', accessRevoked: false };
+  }
+
+  const activeOrgId = targetOrgId || getActiveOrgId();
+
+  try {
+    // 1. Fetch organization member specifically for activeOrgId
+    let omQuery = supabase
+      .from('organization_members')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (activeOrgId) {
+      omQuery = omQuery.eq('organization_id', activeOrgId);
+    }
+
+    const { data: omRows } = await omQuery.limit(1);
+    const omData = omRows && omRows.length > 0 ? omRows[0] : null;
+
+    const dataScope = omData?.data_scope || 'assigned_only';
+    const orgId = activeOrgId || omData?.organization_id;
+
+    // 2. Fetch linked team_member record specifically for activeOrgId
+    let tmQuery = supabase
+      .from('team_members')
+      .select('*')
+      .or(`user_id.eq.${userId},email.eq.${omData?.email || ''}`);
+
+    if (orgId) {
+      tmQuery = tmQuery.eq('organization_id', orgId);
+    }
+
+    const { data: tmRows } = await tmQuery.limit(1);
+    const tmData = tmRows && tmRows.length > 0 ? tmRows[0] : null;
+
+    const isAccessRevoked = !omData && !tmData;
+
+    const teamMember: TeamMember | undefined = tmData ? {
+      id: tmData.id,
+      organizationId: tmData.organization_id,
+      name: tmData.name,
+      email: tmData.email,
+      role: tmData.role,
+      dataScope: tmData.data_scope || 'assigned_only',
+      inviteToken: tmData.invite_token,
+      userId: tmData.user_id,
+      createdAt: tmData.created_at,
+    } : undefined;
+
+    const memberName = teamMember?.name || omData?.name || '';
+    const memberId = teamMember?.id || '';
+
+    // 3. Fetch meetings for this organization
+    let meetings: Meeting[] = [];
+    if (orgId) {
+      const { data: mtgData } = await supabase
+        .from('meetings')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false });
+
+      if (mtgData) {
+        meetings = mtgData
+          .map((m: any) => ({
+            id: m.id,
+            organizationId: m.organization_id,
+            title: m.title,
+            date: m.date,
+            duration: m.duration,
+            sentiment: m.sentiment,
+            summary: m.summary,
+            keyDecisions: m.key_decisions || [],
+            actionItems: [],
+            speakerSegments: m.speaker_segments || [],
+            healthScore: m.health_score || { score: 90, talkTimeBalance: 90, decisionDensity: 90, unassignedPenalty: 0, suggestions: [] },
+            language: m.language,
+            status: m.status || 'completed',
+            audioUrl: m.audio_url,
+            attendeeIds: m.attendee_ids || [],
+            createdAt: m.created_at,
+          }))
+          .filter((m: Meeting) => {
+            if (dataScope === 'full') return true;
+            // Filter by attendee_ids OR matching speaker name in speakerSegments
+            const isAttendee = memberId && m.attendeeIds?.includes(memberId);
+            const isSpeaker = memberName && m.speakerSegments?.some((s) => s.speaker?.toLowerCase().includes(memberName.toLowerCase()));
+            return isAttendee || isSpeaker;
+          });
+      }
+    }
+
+    // 4. Fetch action items assigned to this member
+    let actionItems: ActionItem[] = [];
+    if (orgId) {
+      let query = supabase.from('action_items').select('*').eq('organization_id', orgId);
+      const { data: itemData } = await query;
+
+      if (itemData) {
+        actionItems = itemData
+          .map((i: any) => ({
+            id: i.id,
+            meetingId: i.meeting_id,
+            organizationId: i.organization_id,
+            title: i.title,
+            assignee: i.assignee,
+            priority: i.priority,
+            status: i.status,
+            dueDate: i.due_date,
+            speakerSource: i.speaker_source,
+            linkedMemberId: i.linked_member_id,
+            unlinkedSpeaker: i.unlinked_speaker,
+          }))
+          .filter((i: ActionItem) => {
+            if (dataScope === 'full') return true;
+            const isLinked = memberId && i.linkedMemberId === memberId;
+            const isNameMatch = memberName && (
+              i.assignee?.toLowerCase() === memberName.toLowerCase() ||
+              i.unlinkedSpeaker?.toLowerCase() === memberName.toLowerCase()
+            );
+            return isLinked || isNameMatch;
+          });
+      }
+    }
+
+    return {
+      teamMember,
+      organizationMember: omData ? {
+        id: omData.id,
+        organizationId: omData.organization_id,
+        userId: omData.user_id,
+        role: omData.role,
+        dataScope: omData.data_scope || 'assigned_only',
+        createdAt: omData.created_at,
+      } : undefined,
+      meetings,
+      actionItems,
+      dataScope,
+      accessRevoked: isAccessRevoked,
+    };
+  } catch (err) {
+    console.error('[fetchPersonalMemberWorkspaceData Error]:', err);
+    return { meetings: [], actionItems: [], dataScope: 'assigned_only', accessRevoked: false };
+  }
+}
+
+// Revoke Teammate Access & Delete Invite Token from Supabase
+export async function revokeTeammateAccessFromSupabase(
+  teamMemberId: string,
+  userId?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Supabase client is not available' };
+  try {
+    // 1. Delete team_members record
+    const { error: tmErr } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('id', teamMemberId);
+
+    if (tmErr) {
+      console.error('[Supabase Delete team_members Error]:', tmErr.message);
+      return { success: false, error: tmErr.message };
+    }
+
+    // 2. If user_id is bound, delete organization_members record to cut off workspace access
+    if (userId) {
+      const { error: omErr } = await supabase
+        .from('organization_members')
+        .delete()
+        .eq('user_id', userId);
+
+      if (omErr) {
+        console.warn('[Supabase Delete organization_members Warning]:', omErr.message);
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Join Organization by Code from Supabase
+export async function joinOrganizationByCodeFromSupabase(
+  inviteCode: string,
+  userId: string
+): Promise<{ success: boolean; organizationId?: string; orgName?: string; error?: string; diagnosticDetails?: string }> {
+  if (!supabase || !inviteCode || !userId) {
+    return { 
+      success: false, 
+      error: 'Missing parameters or Supabase client unavailable.',
+      diagnosticDetails: `Client State: Supabase=${!!supabase}, inviteCode=${inviteCode}, userId=${userId}`
+    };
+  }
+
+  const rawCode = inviteCode.trim();
+  const cleanSearch = rawCode.toLowerCase().replace(/-/g, '');
+
+  try {
+    // 1. First try RPC join_organization_with_code (bypasses RLS SELECT filters)
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('join_organization_with_code', {
+      p_invite_code: rawCode,
+    });
+
+    if (!rpcErr) {
+      console.log('[joinOrganizationByCodeFromSupabase] RPC succeeded:', rpcData);
+      return { success: true, organizationId: rpcData?.id || rpcData, orgName: rpcData?.name || 'Workspace' };
+    }
+
+    console.warn('[joinOrganizationByCodeFromSupabase] RPC join_organization_with_code returned:', rpcErr.message);
+
+    // 2. Fallback: Query organizations table
+    const { data: orgs, error: orgErr } = await supabase
+      .from('organizations')
+      .select('id, name, invite_code');
+
+    if (orgErr) {
+      return { 
+        success: false, 
+        error: `Database RLS Restriction: ${orgErr.message}`,
+        diagnosticDetails: `Query: organizations.select. RLS Error: ${orgErr.message} (Code: ${orgErr.code})`
+      };
+    }
+
+    if (!orgs || orgs.length === 0) {
+      return { 
+        success: false, 
+        error: `No accessible workspaces found. RLS policy restricted view.`,
+        diagnosticDetails: `Query returned 0 rows. RLS Policy active on organizations table for user ${userId}.`
+      };
+    }
+
+    const matchedOrg = orgs.find((o) => {
+      const orgIdClean = o.id.toLowerCase().replace(/-/g, '');
+      const inviteClean = o.invite_code ? o.invite_code.toLowerCase().replace(/-/g, '') : '';
+      return (
+        orgIdClean.startsWith(cleanSearch) ||
+        (inviteClean && inviteClean.startsWith(cleanSearch)) ||
+        o.id.toLowerCase() === rawCode.toLowerCase() ||
+        (o.invite_code && o.invite_code.toLowerCase() === rawCode.toLowerCase())
+      );
+    });
+
+    if (!matchedOrg) {
+      const availableCodes = orgs.map(o => `${o.name} (${o.id.slice(0, 10)})`).join(', ');
+      return { 
+        success: false, 
+        error: `No workspace found matching code "${rawCode}".`,
+        diagnosticDetails: `Searched for "${cleanSearch}". Visible Orgs: ${availableCodes || 'None (RLS Hidden)'}. RPC error: ${rpcErr.message}`
+      };
+    }
+
+    // 3. Insert organization_member row
+    const { error: insErr } = await supabase.from('organization_members').insert({
+      organization_id: matchedOrg.id,
+      user_id: userId,
+      role: 'member',
+      data_scope: 'assigned_only',
+    });
+
+    if (insErr && !insErr.message.includes('duplicate')) {
+      return { 
+        success: false, 
+        error: `Failed to insert membership: ${insErr.message}`,
+        diagnosticDetails: `insert into organization_members failed: ${insErr.message}`
+      };
+    }
+
+    // 4. Link team_members entry if present
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user?.email) {
+      await supabase
+        .from('team_members')
+        .update({ user_id: userId })
+        .or(`email.eq.${userData.user.email},invite_token.eq.${rawCode}`)
+        .eq('organization_id', matchedOrg.id);
+    }
+
+    return { success: true, organizationId: matchedOrg.id, orgName: matchedOrg.name };
+  } catch (err: any) {
+    return { 
+      success: false, 
+      error: err.message || 'An unexpected exception occurred.',
+      diagnosticDetails: `Exception caught: ${err.toString()}`
+    };
+  }
+}
+
+// Leave Organization from Supabase
+export async function leaveOrganizationFromSupabase(
+  organizationId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !organizationId || !userId) return { success: false, error: 'Missing parameters or Supabase unavailable' };
+
+  try {
+    const { error: delErr } = await supabase
+      .from('organization_members')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('user_id', userId);
+
+    if (delErr) {
+      console.error('[leaveOrganizationFromSupabase Error]:', delErr.message);
+      return { success: false, error: delErr.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Delete Organization from Supabase
+export async function deleteOrganizationFromSupabase(
+  organizationId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string; diagnosticDetails?: string }> {
+  console.group('%c[Workspace Deletion] Server Endpoint Trace', 'color: #8B5CF6; font-weight: bold; font-size: 13px;');
+  console.log(`🔍 Target Organization ID: "${organizationId}"`);
+  console.log(`👤 Requesting User ID: "${userId}"`);
+
+  if (!organizationId || !userId) {
+    console.error('❌ Missing parameters.');
+    console.groupEnd();
+    return { success: false, error: 'Missing parameters' };
+  }
+
+  try {
+    // 1. Invoke Server Endpoint /api/organizations/delete
+    console.log('📌 Invoking /api/organizations/delete endpoint...');
+    const apiRes = await fetch('/api/organizations/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organizationId }),
+    });
+
+    const apiJson = await apiRes.json();
+    console.log('📊 Server API Response:', apiJson);
+
+    if (!apiRes.ok || !apiJson.success) {
+      console.error('❌ Workspace deletion server RPC verification failed:', apiJson);
+      console.groupEnd();
+      return {
+        success: false,
+        error: apiJson.error || 'Server error during workspace deletion',
+        diagnosticDetails: apiJson.details || apiJson.error || `HTTP ${apiRes.status}`,
+      };
+    }
+
+    // 2. Clear local storage caches upon verified deletion
+    try {
+      const cachedOrgs = localStorage.getItem('user_organizations');
+      if (cachedOrgs) {
+        const parsed = JSON.parse(cachedOrgs);
+        const filtered = parsed.filter((o: any) => o.id !== organizationId);
+        localStorage.setItem('user_organizations', JSON.stringify(filtered));
+      }
+      const activeOrgId = localStorage.getItem('echoes_active_org_id');
+      if (activeOrgId === organizationId) {
+        localStorage.removeItem('echoes_active_org_id');
+      }
+    } catch (e) {}
+
+    console.log('✅ Workspace deletion verified and cleared.');
+    console.groupEnd();
+
+    return {
+      success: true,
+      diagnosticDetails: apiJson.message || 'Workspace record purged & verified from Supabase DB.',
+    };
+  } catch (err: any) {
+    console.error('💥 Exception caught during workspace deletion:', err);
+    console.groupEnd();
+    return {
+      success: false,
+      error: err.message || 'Exception during workspace deletion request.',
+      diagnosticDetails: err.toString(),
+    };
+  }
+}
+

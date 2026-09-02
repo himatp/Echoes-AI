@@ -220,49 +220,82 @@ export async function POST(req: NextRequest) {
 
     y -= 15;
 
-    // Diarized Speaker Transcript
-    page.drawText('DIARIZED SPEAKER TRANSCRIPT', { x: 30, y, size: 11, font: fontBold, color: rgb(0.31, 0.27, 0.90) });
-    y -= 15;
-
-    for (const seg of meeting.speakerSegments) {
-      if (y < 60) {
-        page = pdfDoc.addPage([595, 842]);
-        y = height - 50;
-      }
-      page.drawText(`[${seg.timestamp}] ${seg.speaker}:`, { x: 35, y, size: 9, font: fontBold, color: rgb(0.31, 0.27, 0.90) });
-      y -= 12;
-      const textLines = wrapText(`"${seg.text}"`, 80);
-      for (const tline of textLines) {
-        page.drawText(tline, { x: 45, y, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-        y -= 11;
-      }
-      y -= 4;
-    }
-
-    y -= 15;
-
-    // Action Items
-    if (y < 100) {
+    // Action Items (Placed prominently right after Key Decisions!)
+    if (y < 120) {
       page = pdfDoc.addPage([595, 842]);
       y = height - 50;
     }
 
-    page.drawText('ACTION ITEMS', { x: 30, y, size: 11, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+    page.drawText('ACTION ITEMS & ASSIGNMENTS', { x: 30, y, size: 11, font: fontBold, color: rgb(0.31, 0.27, 0.90) });
     y -= 15;
 
-    for (const task of meeting.actionItems) {
-      if (y < 50) {
-        page = pdfDoc.addPage([595, 842]);
-        y = height - 50;
-      }
-      page.drawText(`[${task.priority.toUpperCase()}] ${task.title} (Assignee: ${task.assignee})`, {
-        x: 35,
-        y,
-        size: 9,
-        font: fontBold,
-        color: rgb(0.2, 0.2, 0.2),
-      });
+    const itemsToDraw = (meeting.actionItems && meeting.actionItems.length > 0)
+      ? meeting.actionItems
+      : [];
+
+    if (itemsToDraw.length === 0) {
+      page.drawText('• No action items created for this meeting.', { x: 35, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
       y -= 14;
+    } else {
+      for (const task of itemsToDraw) {
+        if (y < 50) {
+          page = pdfDoc.addPage([595, 842]);
+          y = height - 50;
+        }
+        const prio = (task.priority || 'medium').toUpperCase();
+        const title = task.title || 'Untitled Task';
+        const assignee = task.assignee || 'Unassigned';
+        const due = task.dueDate ? ` (Due: ${task.dueDate})` : '';
+
+        const itemText = wrapText(`[${prio}] ${title} — Assignee: ${assignee}${due}`, 85);
+        for (const itline of itemText) {
+          page.drawText(itline, {
+            x: 35,
+            y,
+            size: 9,
+            font: fontBold,
+            color: rgb(0.2, 0.2, 0.2),
+          });
+          y -= 12;
+        }
+        y -= 3;
+      }
+    }
+
+    y -= 15;
+
+    // Diarized Speaker Transcript (Placed at the bottom of report)
+    if (y < 120) {
+      page = pdfDoc.addPage([595, 842]);
+      y = height - 50;
+    }
+
+    page.drawText('DIARIZED SPEAKER TRANSCRIPT', { x: 30, y, size: 11, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
+    y -= 15;
+
+    const segmentsToDraw = (meeting.speakerSegments && meeting.speakerSegments.length > 0)
+      ? meeting.speakerSegments
+      : [];
+
+    if (segmentsToDraw.length === 0) {
+      page.drawText('• No transcript segments recorded for this meeting.', { x: 35, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+      y -= 14;
+    } else {
+      for (const seg of segmentsToDraw) {
+        if (y < 60) {
+          page = pdfDoc.addPage([595, 842]);
+          y = height - 50;
+        }
+        const spkName = (seg as any).speakerName || seg.speaker || 'Speaker';
+        page.drawText(`[${seg.timestamp || '00:00'}] ${spkName}:`, { x: 35, y, size: 9, font: fontBold, color: rgb(0.31, 0.27, 0.90) });
+        y -= 12;
+        const textLines = wrapText(`"${seg.text || ''}"`, 80);
+        for (const tline of textLines) {
+          page.drawText(tline, { x: 45, y, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+          y -= 11;
+        }
+        y -= 4;
+      }
     }
 
     const pdfBytes = await pdfDoc.save();

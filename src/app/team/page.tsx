@@ -16,15 +16,32 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
-import { fetchOrganizationMembersFromSupabase, updateTeamMemberDataScope } from '@/lib/supabase/client';
+import { 
+  updateTeamMemberDataScope, updateOrganizationMemberDataScope, 
+  fetchOrganizationMembersFromSupabase, fetchPersonalMemberWorkspaceData
+} from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 
 export default function TeamPage() {
+  const router = useRouter();
   const { activeOrg, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'members' | 'groups'>('members');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [groups, setGroups] = useState<MeetingGroup[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrganizationMember[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Role Guard: Redirect invited teammates away from Team & Groups page
+  useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (data.dataScope === 'assigned_only' && !isOwnerOrAdmin) {
+          router.push('/');
+        }
+      });
+    }
+  }, [user?.id, router]);
 
   // Member Modal State
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -485,7 +502,20 @@ export default function TeamPage() {
         {activeTab === 'groups' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groups.map((group) => {
-              const groupMembers = members.filter((m) => group.memberIds.includes(m.id));
+              const groupMembers = members.filter((m) => {
+                if (!group.memberIds || group.memberIds.length === 0) return false;
+                return group.memberIds.some((idOrVal) => {
+                  if (!idOrVal) return false;
+                  const cleanVal = idOrVal.toLowerCase().trim();
+                  return (
+                    m.id.toLowerCase() === cleanVal ||
+                    (m.name && m.name.toLowerCase().trim() === cleanVal) ||
+                    (m.email && m.email.toLowerCase().trim() === cleanVal) ||
+                    cleanVal.includes(m.name?.toLowerCase()) ||
+                    cleanVal.includes(m.id.toLowerCase())
+                  );
+                });
+              });
               return (
                 <div 
                   key={group.id}

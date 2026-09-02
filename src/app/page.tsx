@@ -12,6 +12,8 @@ import { Mic, ArrowUpRight, CheckCircle2, Clock, Sparkles, Activity, FileText, Z
 import Link from 'next/link';
 
 import { useAuth } from '@/components/auth/AuthProvider';
+import { fetchPersonalMemberWorkspaceData, fetchOrganizationMembersFromSupabase } from '@/lib/supabase/client';
+import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function DashboardPage() {
   const { user, activeOrg } = useAuth();
@@ -20,16 +22,32 @@ export default function DashboardPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [greeting, setGreeting] = useState('Good morning');
   const [needsReviewFilter, setNeedsReviewFilter] = useState<'all' | 'uploaded' | 'transcribed' | 'draft'>('all');
+  
+  // Restricted Portal View State
+  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
+  const [portalData, setPortalData] = useState<any>(null);
 
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Friend';
 
   // Load persistent meetings & tasks for active workspace with live Supabase hydration
   useEffect(() => {
-    console.log('[Dashboard Page] Hard gate verified: Component mounted AFTER splash screen onComplete fired. Initiating data hydration for org:', activeOrg?.id);
     // 1. Instant local render for speed
     setMeetings(getStoredMeetings());
     setTasks(getStoredTasks());
     setIsLoaded(true);
+
+    // Check member access level scope specifically for activeOrg
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (!isOwnerOrAdmin) {
+          setIsRestrictedMember(true);
+          setPortalData(data);
+        } else {
+          setIsRestrictedMember(false);
+        }
+      });
+    }
 
     // 2. Fetch live PostgreSQL remote data for active org
     if (activeOrg?.id) {
@@ -45,7 +63,7 @@ export default function DashboardPage() {
     if (hour < 12) setGreeting('Good morning');
     else if (hour < 17) setGreeting('Good afternoon');
     else setGreeting('Good evening');
-  }, [activeOrg?.id]);
+  }, [activeOrg?.id, user?.id]);
 
   const pendingReviewMeetings = meetings.filter((m) => m.status === 'uploaded' || m.status === 'transcribed' || m.status === 'draft');
   const uploadedReviewCount = pendingReviewMeetings.filter((m) => m.status === 'uploaded').length;
@@ -86,6 +104,18 @@ export default function DashboardPage() {
     hidden: { opacity: 0, y: 16 },
     show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } }
   };
+
+  // If user is a restricted member in the active workspace, render dedicated Member Portal View
+  if (isRestrictedMember) {
+    return (
+      <MemberPortalView
+        initialMeetings={portalData?.meetings || []}
+        initialActionItems={portalData?.actionItems || []}
+        initialTeamMember={portalData?.teamMember}
+        initialOrgMember={portalData?.organizationMember}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-canvas pb-16">

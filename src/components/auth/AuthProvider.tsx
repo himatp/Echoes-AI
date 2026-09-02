@@ -75,6 +75,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUserOrganizations = async (userId: string) => {
     if (!supabase) return [];
     try {
+      let deletedOrgIds: string[] = [];
+      if (typeof window !== 'undefined') {
+        try {
+          deletedOrgIds = JSON.parse(localStorage.getItem('echoes_deleted_workspace_ids') || '[]');
+        } catch (e) {}
+      }
+
       // 0. Proactively delete any legacy demo org membership row for this user
       await supabase
         .from('organization_members')
@@ -89,13 +96,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('user_id', userId);
 
       if (memberErr || !memberRows || memberRows.length === 0) {
+        // Zero workspace safeguard: Auto-bind to primary workspace
+        const { data: anyOrg } = await supabase
+          .from('organizations')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (anyOrg && !deletedOrgIds.includes(anyOrg.id)) {
+          console.log(`[AuthProvider Safeguard] Auto-binding user ${userId} to workspace ${anyOrg.name}...`);
+          await supabase.from('organization_members').insert({
+            organization_id: anyOrg.id,
+            user_id: userId,
+            role: 'member',
+            data_scope: 'assigned_only',
+          });
+
+          return [{
+            id: anyOrg.id,
+            name: anyOrg.name,
+            slug: anyOrg.slug,
+            inviteCode: anyOrg.invite_code,
+            createdAt: anyOrg.created_at,
+          }];
+        }
         return [];
       }
 
-      // Filter out legacy org ID
+      // Filter out legacy org ID and deleted org IDs
       const orgIds = memberRows
         .map((m) => m.organization_id)
-        .filter((id) => id !== LEGACY_ORG_ID);
+        .filter((id) => id !== LEGACY_ORG_ID && !deletedOrgIds.includes(id));
 
       if (orgIds.length === 0) return [];
 
@@ -108,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (orgErr || !orgRows) return [];
 
       const orgs: Organization[] = orgRows
-        .filter((o) => o.id !== LEGACY_ORG_ID)
+        .filter((o) => o.id !== LEGACY_ORG_ID && !deletedOrgIds.includes(o.id))
         .map((o) => ({
           id: o.id,
           name: o.name,
