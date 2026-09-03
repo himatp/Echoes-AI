@@ -402,14 +402,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Hard gate: Render minimalist eclipse loader until auth & workspace data loading completes
-  if (isMounted && (!isSplashCompleted || isLoading)) {
+  // 1. Hard gate: Render Aug 29 Echoes Splash Screen on initial app/session open
+  if (isMounted && !isSplashCompleted) {
     return (
       <LogoLoader
         size="fullscreen"
+        variant="splash"
         onComplete={() => {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('echoes_splash_completed', 'true');
+          }
           setIsSplashCompleted(true);
         }}
+      />
+    );
+  }
+
+  // 2. Hard gate: Render Minimalist Eclipse Ring loader on page refresh to hide 1-1.5s permission load flicker
+  if (isMounted && isLoading) {
+    return (
+      <LogoLoader
+        size="fullscreen"
+        variant="minimal"
       />
     );
   }

@@ -210,6 +210,7 @@ export default function TeamPage() {
       name: memberName.trim(),
       email: memberEmail.trim(),
       role: memberRole.trim() || 'Team Member',
+      dataScope: existingMember ? (existingMember.dataScope || 'assigned_only') : 'assigned_only',
       isDemo: existingMember ? existingMember.isDemo : false,
       createdAt: existingMember ? existingMember.createdAt : new Date().toISOString(),
     };
@@ -436,7 +437,7 @@ export default function TeamPage() {
               const om = orgMembers.find((m) => (member.userId && m.userId === member.userId) || m.userId === member.id);
               const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && 
                               orgMembers.some((m) => m.userId === user?.id && m.role === 'owner');
-              const currentScope: DataScope = isOwner ? 'full' : (member.dataScope || om?.dataScope || 'full');
+              const currentScope: DataScope = isOwner ? 'full' : (member.dataScope || om?.dataScope || 'assigned_only');
 
               return (
                 <div 
@@ -450,8 +451,13 @@ export default function TeamPage() {
                           {member.name.slice(0, 2)}
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-bold text-sm text-zinc-900 dark:text-white leading-snug">{member.name}</h3>
+                            {member.dataScope === 'revoked' && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300 text-[9px] font-bold border border-red-500/20">
+                                Access Revoked
+                              </span>
+                            )}
                             {member.isDemo && (
                               <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[9px] font-bold">
                                 Demo

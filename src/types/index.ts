@@ -1,7 +1,7 @@
 export type Priority = 'urgent' | 'high' | 'medium' | 'low';
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'completed';
 
-export type DataScope = 'full' | 'assigned_only';
+export type DataScope = 'full' | 'assigned_only' | 'revoked';
 
 export interface Organization {
   id: string;

@@ -19,7 +19,9 @@ yarn-debug.log*
 yarn-error.log*
 scratch/
 
-# IDE / OS
+# IDE / OS / Tests
 .DS_Store
 .idea/
 .vscode/
+.tests/
+tests/

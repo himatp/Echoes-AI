@@ -1,5 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
-import { Meeting, ActionItem, TeamMember, MeetingGroup, OrganizationMember } from '@/types';
+import { Meeting, ActionItem, TeamMember, MeetingGroup, OrganizationMember, DataScope } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -499,7 +499,7 @@ export async function fetchOrganizationMembersFromSupabase(organizationId: strin
 // Update Team Member & Organization Member Data Scope in Supabase
 export async function updateTeamMemberDataScope(
   teamMemberId: string,
-  dataScope: 'full' | 'assigned_only',
+  dataScope: DataScope,
   userId?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase client is not available' };
@@ -536,7 +536,7 @@ export async function updateTeamMemberDataScope(
 // Update Organization Member Data Scope in Supabase
 export async function updateOrganizationMemberDataScope(
   memberId: string, 
-  dataScope: 'full' | 'assigned_only'
+  dataScope: DataScope
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase client is not available' };
   try {
@@ -790,18 +790,19 @@ export async function revokeTeammateAccessFromSupabase(
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabase) return { success: false, error: 'Supabase client is not available' };
   try {
-    // 1. Delete team_members record
+    // 1. Unbind user_id and set data_scope = 'revoked' on team_members (do NOT delete team_members row!)
     const { error: tmErr } = await supabase
       .from('team_members')
-      .delete()
+      .update({ user_id: null, data_scope: 'revoked' })
       .eq('id', teamMemberId);
 
     if (tmErr) {
-      console.error('[Supabase Delete team_members Error]:', tmErr.message);
-      return { success: false, error: tmErr.message };
+      console.warn('[Supabase Revoke team_members Warning]:', tmErr.message);
+      // Fallback: unbind user_id
+      await supabase.from('team_members').update({ user_id: null }).eq('id', teamMemberId);
     }
 
-    // 2. If user_id is bound, delete organization_members record to cut off workspace access
+    // 2. Delete organization_members record if user_id is bound so they lose workspace access
     if (userId) {
       const { error: omErr } = await supabase
         .from('organization_members')
@@ -922,31 +923,6 @@ export async function joinOrganizationByCodeFromSupabase(
       error: err.message || 'An unexpected exception occurred.',
       diagnosticDetails: `Exception caught: ${err.toString()}`
     };
-  }
-}
-
-// Leave Organization from Supabase
-export async function leaveOrganizationFromSupabase(
-  organizationId: string,
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
-  if (!supabase || !organizationId || !userId) return { success: false, error: 'Missing parameters or Supabase unavailable' };
-
-  try {
-    const { error: delErr } = await supabase
-      .from('organization_members')
-      .delete()
-      .eq('organization_id', organizationId)
-      .eq('user_id', userId);
-
-    if (delErr) {
-      console.error('[leaveOrganizationFromSupabase Error]:', delErr.message);
-      return { success: false, error: delErr.message };
-    }
-
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message };
   }
 }
 

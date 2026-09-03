@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { 
   Mic, LayoutDashboard, CheckSquare, Video, Sun, Moon, Users, 
-  Menu, X, LogOut, UserPlus, Plus, User, KeyRound, DoorOpen, Trash2 
+  Menu, X, LogOut, UserPlus, Plus, User, KeyRound, Trash2 
 } from 'lucide-react';
 import { PillBadge } from '../ui/PillBadge';
 import { UserAvatar } from '../ui/UserAvatar';
@@ -15,7 +15,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { InviteModal } from '../auth/InviteModal';
 import { CreateOrgModal } from '../auth/CreateOrgModal';
 import { JoinOrgModal } from '../auth/JoinOrgModal';
-import { fetchPersonalMemberWorkspaceData, leaveOrganizationFromSupabase, deleteOrganizationFromSupabase } from '@/lib/supabase/client';
+import { fetchPersonalMemberWorkspaceData, deleteOrganizationFromSupabase } from '@/lib/supabase/client';
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
@@ -50,36 +50,6 @@ export const Navbar: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-
-  const handleLeaveWorkspace = async (e: React.MouseEvent, orgId: string, orgName: string) => {
-    e.stopPropagation();
-    if (!user?.id) return;
-    if (!confirm(`Are you sure you want to leave workspace "${orgName}"? You will lose access to its meetings and tasks.`)) {
-      return;
-    }
-
-    const remainingOrgs = userOrgs.filter((o) => o.id !== orgId);
-    const res = await leaveOrganizationFromSupabase(orgId, user.id);
-    if (res.success) {
-      if (remainingOrgs.length > 0) {
-        switchOrg(remainingOrgs[0].id);
-      }
-      await refreshOrgs();
-      setIsDropdownOpen(false);
-      setDeleteDiagnostic({
-        title: 'Workspace Left',
-        message: `Successfully left workspace "${orgName}".`,
-        success: true,
-      });
-    } else {
-      setDeleteDiagnostic({
-        title: 'Failed to Leave Workspace',
-        message: res.error || 'Failed to leave workspace.',
-        details: res.error,
-        success: false,
-      });
-    }
-  };
 
   const handleDeleteWorkspace = async (e: React.MouseEvent, orgId: string, orgName: string) => {
     e.stopPropagation();
@@ -303,28 +273,18 @@ export const Navbar: React.FC = () => {
                                   {isOrgOwner ? '👑 Owner' : '🔒 Member'}
                                 </span>
                               )}
-                              {userOrgs.length > 1 && (
+                              {userOrgs.length > 1 && isOrgOwner && (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    if (isOrgOwner) {
-                                      handleDeleteWorkspace(e, org.id, org.name);
-                                    } else {
-                                      handleLeaveWorkspace(e, org.id, org.name);
-                                    }
-                                  }}
+                                  onClick={(e) => handleDeleteWorkspace(e, org.id, org.name)}
                                   className={`p-1 rounded-lg transition-colors ${
                                     isActive
                                       ? 'hover:bg-indigo-700 text-indigo-200 hover:text-white'
                                       : 'hover:bg-red-500/20 text-zinc-400 hover:text-red-500'
                                   }`}
-                                  title={isOrgOwner ? `Delete ${org.name}` : `Leave ${org.name}`}
+                                  title={`Delete ${org.name}`}
                                 >
-                                  {isOrgOwner ? (
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <DoorOpen className="w-3.5 h-3.5" />
-                                  )}
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>

@@ -80,24 +80,25 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
 
   // Revoke Teammate Access Handler
   const handleRevokeAccess = async (member: TeamMember) => {
-    if (!confirm(`Are you sure you want to revoke access for ${member.name}? They will immediately be cut off from viewing your workspace, meetings, and tasks.`)) {
+    if (!confirm(`Are you sure you want to revoke access for ${member.name}? They will immediately be cut off from viewing your workspace, meetings, and tasks, but will remain listed in your Team Members directory.`)) {
       return;
     }
 
     setRevokingId(member.id);
     setToastMessage(null);
 
-    // 1. Remove from local store
-    deleteTeamMember(member.id);
-
-    // 2. Remove from Supabase DB
+    // Revoke workspace access in Supabase DB without deleting team_members profile
     const res = await revokeTeammateAccessFromSupabase(member.id, member.userId);
     setRevokingId(null);
 
     if (res.success) {
-      setTeamMembers((prev) => prev.filter((m) => m.id !== member.id));
+      setTeamMembers((prev) =>
+        prev.map((m) =>
+          m.id === member.id ? { ...m, userId: undefined, dataScope: 'revoked' as any } : m
+        )
+      );
       setToastMessage({
-        text: `✓ Access revoked for ${member.name}. They can no longer see this workspace.`,
+        text: `✓ Access revoked for ${member.name}. They remain in your team list with revoked access.`,
         type: 'success',
       });
       setTimeout(() => setToastMessage(null), 4000);
@@ -285,12 +286,14 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
                           </span>
                           <span
                             className={`px-2 py-0.2 rounded-full text-[9px] font-extrabold border ${
-                              isJoined
+                              member.dataScope === 'revoked'
+                                ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
+                                : isJoined
                                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                                 : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
                             }`}
                           >
-                            {isJoined ? '✓ Joined' : '⏳ Pending'}
+                            {member.dataScope === 'revoked' ? '🚫 Revoked' : isJoined ? '✓ Joined' : '⏳ Pending'}
                           </span>
                         </div>
 
@@ -305,31 +308,39 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
                       <button
                         type="button"
                         onClick={() => handleCopyPerPersonLink(member)}
-                        className="p-2 rounded-xl bg-zinc-200/60 dark:bg-zinc-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 transition-colors"
-                        title="Copy per-person invite link for this member"
+                        className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20 text-[11px] font-bold transition-all flex items-center gap-1.5"
+                        title="Copy invite link to restore access"
                       >
                         {perPersonCopiedId === member.id ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Link Copied</span>
+                          </>
                         ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{member.dataScope === 'revoked' ? 'Grant Access' : 'Copy Link'}</span>
+                          </>
                         )}
                       </button>
 
-                      {/* Revoke Access Button */}
-                      <button
-                        type="button"
-                        disabled={revokingId === member.id}
-                        onClick={() => handleRevokeAccess(member)}
-                        className="px-2.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white border border-red-500/20 text-[11px] font-bold transition-all flex items-center gap-1 active:scale-95 disabled:opacity-50"
-                        title="Revoke access and invalidate invite for this member"
-                      >
-                        {revokingId === member.id ? (
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <UserMinus className="w-3.5 h-3.5" />
-                        )}
-                        <span className="hidden sm:inline">Revoke Access</span>
-                      </button>
+                      {/* Revoke Access Button (Only shown if currently joined/active) */}
+                      {isJoined && member.dataScope !== 'revoked' && (
+                        <button
+                          type="button"
+                          disabled={revokingId === member.id}
+                          onClick={() => handleRevokeAccess(member)}
+                          className="px-2.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white border border-red-500/20 text-[11px] font-bold transition-all flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                          title="Revoke access and block workspace view for this member"
+                        >
+                          {revokingId === member.id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <UserMinus className="w-3.5 h-3.5" />
+                          )}
+                          <span className="hidden sm:inline">Revoke Access</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
