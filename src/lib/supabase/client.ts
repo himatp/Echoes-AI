@@ -371,7 +371,7 @@ export async function syncTeamMemberToSupabase(member: TeamMember, organizationI
       name: member.name,
       email: member.email,
       role: member.role || null,
-      data_scope: member.dataScope || 'full',
+      data_scope: member.dataScope || 'assigned_only',
       created_at: member.createdAt,
     };
     if (member.userId) payload.user_id = member.userId;
@@ -488,7 +488,7 @@ export async function fetchOrganizationMembersFromSupabase(organizationId: strin
       organizationId: m.organization_id,
       userId: m.user_id,
       role: m.role,
-      dataScope: m.data_scope || 'full',
+      dataScope: m.data_scope || (m.role === 'owner' || m.role === 'admin' ? 'full' : 'assigned_only'),
       createdAt: m.created_at,
     }));
   } catch (err) {
@@ -588,7 +588,11 @@ export async function deleteMeetingFromSupabase(meetingId: string): Promise<bool
 }
 
 // Fetch Personal Member Workspace Data for Restricted Portal View
-export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrgId?: string): Promise<{
+export async function fetchPersonalMemberWorkspaceData(
+  userId: string, 
+  targetOrgId?: string,
+  userEmail?: string
+): Promise<{
   teamMember?: TeamMember;
   organizationMember?: OrganizationMember;
   meetings: Meeting[];
@@ -603,6 +607,14 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
   const activeOrgId = targetOrgId || getActiveOrgId();
 
   try {
+    // Get user email from parameter or Auth user if available
+    let currentUserEmail = userEmail;
+    if (!currentUserEmail && supabase) {
+      const { data: authData } = await supabase.auth.getUser();
+      currentUserEmail = authData?.user?.email || undefined;
+    }
+    const cleanEmail = (currentUserEmail || '').trim().toLowerCase();
+
     // 1. Fetch organization member specifically for activeOrgId
     let omQuery = supabase
       .from('organization_members')
@@ -616,14 +628,19 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
     const { data: omRows } = await omQuery.limit(1);
     const omData = omRows && omRows.length > 0 ? omRows[0] : null;
 
-    const dataScope = omData?.data_scope || 'assigned_only';
+    const isOwnerOrAdmin = omData?.role === 'owner' || omData?.role === 'admin';
     const orgId = activeOrgId || omData?.organization_id;
 
     // 2. Fetch linked team_member record specifically for activeOrgId
     let tmQuery = supabase
       .from('team_members')
-      .select('*')
-      .or(`user_id.eq.${userId},email.eq.${omData?.email || ''}`);
+      .select('*');
+
+    if (cleanEmail) {
+      tmQuery = tmQuery.or(`user_id.eq.${userId},email.eq.${cleanEmail}`);
+    } else {
+      tmQuery = tmQuery.eq('user_id', userId);
+    }
 
     if (orgId) {
       tmQuery = tmQuery.eq('organization_id', orgId);
@@ -631,6 +648,26 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
 
     const { data: tmRows } = await tmQuery.limit(1);
     const tmData = tmRows && tmRows.length > 0 ? tmRows[0] : null;
+
+    // Auto-link user_id on team_members if matched by email
+    if (tmData && !tmData.user_id && userId) {
+      console.log(`[fetchPersonalMemberWorkspaceData] Auto-linking user_id ${userId} to team_members record ${tmData.id} (${tmData.email})...`);
+      await supabase.from('team_members').update({ user_id: userId }).eq('id', tmData.id);
+      tmData.user_id = userId;
+    }
+
+    // Auto-sync organization_members data_scope to tmData.data_scope if tmData exists
+    if (tmData && tmData.data_scope && !isOwnerOrAdmin) {
+      if (omData && omData.data_scope !== tmData.data_scope) {
+        console.log(`[fetchPersonalMemberWorkspaceData] Syncing organization_members.data_scope for user ${userId} to ${tmData.data_scope}...`);
+        await supabase.from('organization_members').update({ data_scope: tmData.data_scope }).eq('id', omData.id);
+        omData.data_scope = tmData.data_scope;
+      }
+    }
+
+    const effectiveDataScope: 'full' | 'assigned_only' = isOwnerOrAdmin
+      ? 'full'
+      : (tmData?.data_scope || omData?.data_scope || 'assigned_only');
 
     const isAccessRevoked = !omData && !tmData;
 
@@ -648,6 +685,7 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
 
     const memberName = teamMember?.name || omData?.name || '';
     const memberId = teamMember?.id || '';
+    const memberEmail = teamMember?.email || cleanEmail || '';
 
     // 3. Fetch meetings for this organization
     let meetings: Meeting[] = [];
@@ -679,7 +717,7 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
             createdAt: m.created_at,
           }))
           .filter((m: Meeting) => {
-            if (dataScope === 'full') return true;
+            if (effectiveDataScope === 'full') return true;
             // Filter by attendee_ids OR matching speaker name in speakerSegments
             const isAttendee = memberId && m.attendeeIds?.includes(memberId);
             const isSpeaker = memberName && m.speakerSegments?.some((s) => s.speaker?.toLowerCase().includes(memberName.toLowerCase()));
@@ -710,13 +748,16 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
             unlinkedSpeaker: i.unlinked_speaker,
           }))
           .filter((i: ActionItem) => {
-            if (dataScope === 'full') return true;
+            if (effectiveDataScope === 'full') return true;
             const isLinked = memberId && i.linkedMemberId === memberId;
             const isNameMatch = memberName && (
               i.assignee?.toLowerCase() === memberName.toLowerCase() ||
               i.unlinkedSpeaker?.toLowerCase() === memberName.toLowerCase()
             );
-            return isLinked || isNameMatch;
+            const isEmailMatch = userEmail && (
+              i.assignee?.toLowerCase() === userEmail.toLowerCase()
+            );
+            return isLinked || isNameMatch || isEmailMatch;
           });
       }
     }
@@ -733,7 +774,7 @@ export async function fetchPersonalMemberWorkspaceData(userId: string, targetOrg
       } : undefined,
       meetings,
       actionItems,
-      dataScope,
+      dataScope: effectiveDataScope,
       accessRevoked: isAccessRevoked,
     };
   } catch (err) {

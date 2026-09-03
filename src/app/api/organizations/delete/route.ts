@@ -35,6 +35,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    // 0. Verify that requesting user is an OWNER of this organization in organization_members
+    const { data: memberRow, error: memberErr } = await supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organization_id', organizationId)
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+
+    if (memberErr || !memberRow || memberRow.role !== 'owner') {
+      console.warn(`[API /api/organizations/delete] User ${session.user.id} attempted to delete org ${organizationId} but is not owner (Role: ${memberRow?.role || 'none'})`);
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only the workspace owner can delete this workspace.' },
+        { status: 403 }
+      );
+    }
+
     console.log(`[API /api/organizations/delete] Executing RPC delete_organization_by_id for org: ${organizationId}`);
 
     // 1. Call SECURITY DEFINER RPC function

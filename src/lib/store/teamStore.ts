@@ -8,15 +8,7 @@ import {
 const STORAGE_KEY_TEAM_MEMBERS = 'echoes_team_members_v1';
 const STORAGE_KEY_MEETING_GROUPS = 'echoes_meeting_groups_v1';
 
-const DEFAULT_SEED_MEMBERS: TeamMember[] = [
-  { id: 'tm-1', name: 'Amit', email: 'jodhpuriharsh@gmail.com', role: 'Developer', dataScope: 'assigned_only', createdAt: new Date().toISOString() },
-  { id: 'tm-2', name: 'Riya', email: 'riya@workspace.com', role: 'Product Manager', dataScope: 'assigned_only', createdAt: new Date().toISOString() },
-  { id: 'tm-3', name: 'Kishan', email: 'kishan@workspace.com', role: 'Backend Lead', dataScope: 'assigned_only', createdAt: new Date().toISOString() },
-  { id: 'tm-4', name: 'Neha', email: 'neha@workspace.com', role: 'UI/UX Designer', dataScope: 'assigned_only', createdAt: new Date().toISOString() },
-  { id: 'tm-5', name: 'Rahul', email: 'rahul@workspace.com', role: 'QA Engineer', dataScope: 'assigned_only', createdAt: new Date().toISOString() },
-];
-
-// Read stored team members filtered by active organization
+// Read stored team members filtered strictly by active organization
 export function getStoredTeamMembers(): TeamMember[] {
   if (typeof window === 'undefined') return [];
   const activeOrgId = getActiveOrgId();
@@ -24,24 +16,15 @@ export function getStoredTeamMembers(): TeamMember[] {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_TEAM_MEMBERS);
-    if (raw === null) {
-      const seeded = DEFAULT_SEED_MEMBERS.map((m) => ({ ...m, organizationId: activeOrgId }));
-      localStorage.setItem(STORAGE_KEY_TEAM_MEMBERS, JSON.stringify(seeded));
-      return seeded;
-    }
+    if (!raw) return [];
     const allMembers: TeamMember[] = JSON.parse(raw);
-    return allMembers.filter((m) => !m.organizationId || m.organizationId === activeOrgId);
+    return allMembers.filter((m) => m.organizationId === activeOrgId);
   } catch (err) {
     return [];
   }
 }
 
-const DEFAULT_SEED_GROUPS: MeetingGroup[] = [
-  { id: 'grp-1', name: 'Management group', memberIds: ['tm-1', 'tm-2', 'tm-3'], createdAt: new Date().toISOString() },
-  { id: 'grp-2', name: 'Sample Group', memberIds: ['tm-4', 'tm-5'], createdAt: new Date().toISOString() },
-];
-
-// Read stored meeting groups filtered by active organization
+// Read stored meeting groups filtered strictly by active organization
 export function getStoredMeetingGroups(): MeetingGroup[] {
   if (typeof window === 'undefined') return [];
   const activeOrgId = getActiveOrgId();
@@ -49,13 +32,9 @@ export function getStoredMeetingGroups(): MeetingGroup[] {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MEETING_GROUPS);
-    if (raw === null) {
-      const seeded = DEFAULT_SEED_GROUPS.map((g) => ({ ...g, organizationId: activeOrgId }));
-      localStorage.setItem(STORAGE_KEY_MEETING_GROUPS, JSON.stringify(seeded));
-      return seeded;
-    }
+    if (!raw) return [];
     const allGroups: MeetingGroup[] = JSON.parse(raw);
-    return allGroups.filter((g) => !g.organizationId || g.organizationId === activeOrgId);
+    return allGroups.filter((g) => g.organizationId === activeOrgId);
   } catch (err) {
     return [];
   }
@@ -71,26 +50,23 @@ export async function fetchAndHydrateTeamFromSupabase(organizationId?: string): 
     const remoteMembers = await fetchTeamMembersFromSupabase(activeOrgId);
     const remoteGroups = await fetchMeetingGroupsFromSupabase(activeOrgId);
 
-    // Read stored members and groups safely
+    const scopedMembers = remoteMembers.map((m) => ({ ...m, organizationId: activeOrgId }));
+    const scopedGroups = remoteGroups.map((g) => ({ ...g, organizationId: activeOrgId }));
+
+    // Read existing stored items and preserve only other orgs' items
     const rawMem = localStorage.getItem(STORAGE_KEY_TEAM_MEMBERS);
     const allStoredMem: TeamMember[] = rawMem ? JSON.parse(rawMem) : [];
-    const orgStoredMem = allStoredMem.filter((m) => !m.organizationId || m.organizationId === activeOrgId);
-    const mergedMembersMap = new Map<string, TeamMember>();
-    orgStoredMem.forEach((m) => mergedMembersMap.set(m.id, { ...m, organizationId: activeOrgId }));
-    remoteMembers.forEach((m) => mergedMembersMap.set(m.id, { ...m, organizationId: activeOrgId }));
-    const finalMembers = Array.from(mergedMembersMap.values());
     const otherOrgMem = allStoredMem.filter((m) => m.organizationId && m.organizationId !== activeOrgId);
-    localStorage.setItem(STORAGE_KEY_TEAM_MEMBERS, JSON.stringify([...finalMembers, ...otherOrgMem]));
+    localStorage.setItem(STORAGE_KEY_TEAM_MEMBERS, JSON.stringify([...scopedMembers, ...otherOrgMem]));
 
     const rawGrp = localStorage.getItem(STORAGE_KEY_MEETING_GROUPS);
     const allStoredGrp: MeetingGroup[] = rawGrp ? JSON.parse(rawGrp) : [];
-    const otherOrgGrp = allStoredGrp.filter((g) => g.organizationId !== activeOrgId);
-    const updatedGrp = remoteGroups.length > 0 ? [...remoteGroups, ...otherOrgGrp] : [...otherOrgGrp];
-    localStorage.setItem(STORAGE_KEY_MEETING_GROUPS, JSON.stringify(updatedGrp));
+    const otherOrgGrp = allStoredGrp.filter((g) => g.organizationId && g.organizationId !== activeOrgId);
+    localStorage.setItem(STORAGE_KEY_MEETING_GROUPS, JSON.stringify([...scopedGroups, ...otherOrgGrp]));
 
     return {
-      members: getStoredTeamMembers(),
-      groups: getStoredMeetingGroups(),
+      members: scopedMembers,
+      groups: scopedGroups,
     };
   } catch (err) {
     return {

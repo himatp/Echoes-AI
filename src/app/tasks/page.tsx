@@ -17,14 +17,10 @@ import { syncTaskStatusToSupabase, fetchPersonalMemberWorkspaceData } from '@/li
 import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function TaskBoardPage() {
-  const { user, activeOrg } = useAuth();
+  const { user, activeOrg, isRestrictedMember, personalMemberData } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [tasks, setTasks] = useState<ActionItem[]>([]);
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
-
-  // Restricted Portal View State
-  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
-  const [portalData, setPortalData] = useState<any>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,20 +50,6 @@ export default function TaskBoardPage() {
   };
 
   useEffect(() => {
-    if (user?.id) {
-      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
-        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
-        if (!isOwnerOrAdmin) {
-          setIsRestrictedMember(true);
-          setPortalData(data);
-        } else {
-          setIsRestrictedMember(false);
-        }
-      });
-    }
-  }, [user?.id, activeOrg?.id]);
-
-  useEffect(() => {
     refreshData();
     if (activeOrg?.id) {
       fetchAndHydrateMeetingsFromSupabase(activeOrg.id).then((hydrated) => {
@@ -78,12 +60,23 @@ export default function TaskBoardPage() {
     }
   }, [activeOrg?.id]);
 
+  if (isRestrictedMember) {
+    return (
+      <MemberPortalView
+        initialMeetings={personalMemberData?.meetings || []}
+        initialActionItems={personalMemberData?.actionItems || []}
+        initialTeamMember={personalMemberData?.teamMember}
+        initialOrgMember={personalMemberData?.organizationMember}
+      />
+    );
+  }
+
   // Update Task Status with Real-Time Persistence Sync & Ownership Validation
   const handleStatusChange = async (taskId: string, newStatus: ActionItem['status']) => {
     const targetTask = tasks.find((t) => t.id === taskId);
     if (isRestrictedMember && targetTask) {
-      const memberId = portalData?.teamMember?.id;
-      const memberName = portalData?.teamMember?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
+      const memberId = personalMemberData?.teamMember?.id;
+      const memberName = personalMemberData?.teamMember?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
       
       const isAssignedToMe = (memberId && targetTask.linkedMemberId === memberId) ||
         (memberName && (

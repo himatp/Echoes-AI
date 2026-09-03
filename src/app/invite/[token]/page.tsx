@@ -4,18 +4,22 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Navbar } from '@/components/layout/Navbar';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { acceptPerPersonInviteToken } from '@/lib/supabase/client';
+import { acceptPerPersonInviteToken, joinOrganizationByCodeFromSupabase } from '@/lib/supabase/client';
 import { ShieldCheck, UserCheck, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
 
 export default function InviteAcceptPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userOrgs } = useAuth();
   const token = params.token as string;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const isAlreadyMember = userOrgs?.some(
+    (o) => o.id === token || o.inviteCode === token || (o as any).invite_code === token
+  );
 
   const handleAcceptInvite = async () => {
     if (!user) {
@@ -24,19 +28,37 @@ export default function InviteAcceptPage() {
       return;
     }
 
+    if (isAlreadyMember) {
+      router.push('/');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const res = await acceptPerPersonInviteToken(token);
+    // 1. Try per-person invite token
+    let res = await acceptPerPersonInviteToken(token);
+
+    // 2. Fallback: Try workspace general invite code
+    if (!res.success) {
+      console.log(`[Invite Page] Per-person token lookup failed for "${token}". Attempting workspace general code join...`);
+      const wsRes = await joinOrganizationByCodeFromSupabase(token, user.id);
+      if (wsRes.success) {
+        res = { success: true };
+      } else {
+        setLoading(false);
+        setError(wsRes.error || res.error || 'Failed to accept invitation. The invite link may be invalid.');
+        return;
+      }
+    }
+
     setLoading(false);
 
     if (res.success) {
       setSuccess(true);
       setTimeout(() => {
         router.push('/');
-      }, 2000);
-    } else {
-      setError(res.error || 'Failed to accept invitation. The invite link may be invalid or expired.');
+      }, 1500);
     }
   };
 
@@ -53,13 +75,13 @@ export default function InviteAcceptPage() {
           <div>
             <span className="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs inline-flex items-center gap-1.5 mb-3">
               <Sparkles className="w-3.5 h-3.5" />
-              Per-Person Workspace Invite
+              Workspace Invite Access
             </span>
             <h1 className="text-2xl font-extrabold text-zinc-900 dark:text-white tracking-tight">
               You're Invited to Join Workspace
             </h1>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
-              Accepting this invitation will bind your account directly to your assigned team profile with restricted data access level.
+              Accepting this invitation will bind your account directly to your assigned workspace profile.
             </p>
           </div>
 
@@ -70,7 +92,18 @@ export default function InviteAcceptPage() {
             </div>
           )}
 
-          {success ? (
+          {isAlreadyMember ? (
+            <div className="p-5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 text-indigo-800 dark:text-indigo-300 text-xs font-bold flex flex-col items-center gap-3 text-center">
+              <ShieldCheck className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+              <span>You are already a member of this workspace!</span>
+              <button
+                onClick={() => router.push('/')}
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-sm"
+              >
+                Go to Dashboard ➔
+              </button>
+            </div>
+          ) : success ? (
             <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
               <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               <span>Invitation accepted! Redirecting to Dashboard…</span>

@@ -7,7 +7,21 @@ import { Meeting } from '@/types';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { recipientEmail, assigneeName, meeting }: { recipientEmail?: string; assigneeName?: string; meeting?: Meeting } = body;
+    const { 
+      recipientEmail, 
+      assigneeName, 
+      meeting,
+      workspaceName: rawWsName,
+      workspaceInviteCode: rawInviteCode,
+      workspaceInviteLink: rawInviteLink,
+    }: { 
+      recipientEmail?: string; 
+      assigneeName?: string; 
+      meeting?: Meeting;
+      workspaceName?: string;
+      workspaceInviteCode?: string;
+      workspaceInviteLink?: string;
+    } = body;
 
     const gmailUser = process.env.GMAIL_USER;
     const gmailPass = process.env.GMAIL_APP_PASSWORD;
@@ -30,6 +44,15 @@ export async function POST(req: NextRequest) {
     const summary = meeting?.summary || 'The team reviewed sprint milestones and finalized action item allocations.';
     const healthScore = meeting?.healthScore?.score || 90;
     const actionItems = meeting?.actionItems || [];
+
+    const wsName = rawWsName || (meeting as any)?.organizationName || 'Echoes Workspace';
+    const inviteCode = rawInviteCode || (meeting as any)?.inviteCode || (meeting as any)?.invite_code;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const inviteLink = rawInviteLink || (inviteCode ? `${appUrl}/invite/${inviteCode}` : undefined);
+
+    if (!inviteCode || !inviteLink) {
+      console.warn('⚠️ [Email Digest API Warning]: No valid workspace invite code or link provided in request body!');
+    }
 
     // Filter tasks assigned to this recipient or show all relevant tasks
     const userTasks = actionItems.filter((t) => t.assignee.toLowerCase().includes(targetAssignee.toLowerCase()) || targetAssignee === 'Team Member' || targetAssignee === 'Additional Recipient');
@@ -129,6 +152,31 @@ export async function POST(req: NextRequest) {
               <!-- MOBILE CARDS VIEW (Hidden by default on desktop, displayed on mobile <= 600px) -->
               <div class="mobile-view" style="display: none; max-height: 0; overflow: hidden;">
                 ${tasksHtmlMobile}
+              </div>
+
+              <!-- WORKSPACE TEAMMATE INVITATION CARD -->
+              <div style="margin-top: 24px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; text-align: center;">
+                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #166534; letter-spacing: 0.5px; margin-bottom: 6px;">
+                  🏢 Workspace Teammate Access
+                </div>
+                <div style="font-size: 14px; font-weight: bold; color: #14532d; margin-bottom: 12px;">
+                  Join <strong>${wsName}</strong> on Echoes AI
+                </div>
+                
+                <div style="margin-bottom: 14px;">
+                  <span style="font-size: 11px; color: #15803d; font-weight: bold;">Invite Code:</span>
+                  <span style="display: inline-block; background: #ffffff; border: 1px dashed #22c55e; border-radius: 8px; padding: 4px 12px; font-family: monospace; font-size: 14px; font-weight: bold; color: #15803d; margin-left: 6px; letter-spacing: 1px;">
+                    ${inviteCode}
+                  </span>
+                </div>
+
+                <a href="${inviteLink}" target="_blank" style="display: inline-block; background: #16a34a; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: bold; padding: 10px 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                  🚀 Click Here to Join Workspace
+                </a>
+                
+                <div style="margin-top: 10px; font-size: 11px; color: #166534;">
+                  Direct Join Link: <a href="${inviteLink}" style="color: #15803d; text-decoration: underline;">${inviteLink}</a>
+                </div>
               </div>
 
               <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e4e4e7; text-align: center; font-size: 11px; color: #a1a1aa;">

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { supabase, fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { Organization } from '@/types';
 
@@ -14,6 +14,9 @@ interface AuthContextType {
   activeOrg: Organization | null;
   userOrgs: Organization[];
   isLoading: boolean;
+  isRestrictedMember: boolean;
+  isFullAccess: boolean;
+  personalMemberData: any;
   switchOrg: (orgId: string) => void;
   createOrg: (name: string, slug: string) => Promise<{ success: boolean; error?: string }>;
   joinOrgWithCode: (code: string) => Promise<{ success: boolean; error?: string }>;
@@ -27,6 +30,9 @@ const AuthContext = createContext<AuthContextType>({
   activeOrg: null,
   userOrgs: [],
   isLoading: true,
+  isRestrictedMember: false,
+  isFullAccess: true,
+  personalMemberData: null,
   switchOrg: () => {},
   createOrg: async () => ({ success: false }),
   joinOrgWithCode: async () => ({ success: false }),
@@ -56,16 +62,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeOrg, setActiveOrg] = useState<Organization | null>(null);
   const [userOrgs, setUserOrgs] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [personalMemberData, setPersonalMemberData] = useState<any>(null);
+  const [isRestrictedMember, setIsRestrictedMember] = useState<boolean>(false);
+  const [isFullAccess, setIsFullAccess] = useState<boolean>(true);
   const [isSplashCompleted, setIsSplashCompleted] = useState<boolean>(false);
   const [isMounted, setIsMounted] = useState<boolean>(false);
 
   useEffect(() => {
     setIsMounted(true);
     if (typeof window !== 'undefined') {
-      const isSplashDone =
-        sessionStorage.getItem('echoes_splash_completed') === 'true' ||
-        window.location.pathname.startsWith('/login');
-      if (isSplashDone) {
+      const isLoginPage = window.location.pathname.startsWith('/login');
+      if (isLoginPage) {
         setIsSplashCompleted(true);
       }
     }
@@ -92,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 1. Fetch organization memberships for user
       const { data: memberRows, error: memberErr } = await supabase
         .from('organization_members')
-        .select('organization_id')
+        .select('organization_id, role')
         .eq('user_id', userId);
 
       if (memberErr || !memberRows || memberRows.length === 0) {
@@ -118,11 +125,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             name: anyOrg.name,
             slug: anyOrg.slug,
             inviteCode: anyOrg.invite_code,
+            role: 'member' as const,
             createdAt: anyOrg.created_at,
           }];
         }
         return [];
       }
+
+      // Map member roles
+      const roleMap = new Map<string, 'owner' | 'admin' | 'member'>();
+      memberRows.forEach((m) => {
+        roleMap.set(m.organization_id, m.role as any);
+      });
 
       // Filter out legacy org ID and deleted org IDs
       const orgIds = memberRows
@@ -146,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: o.name,
           slug: o.slug,
           inviteCode: o.invite_code,
+          role: roleMap.get(o.id) || 'member',
           createdAt: o.created_at,
         }));
 
@@ -153,6 +168,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error('[AuthProvider] Error loading user organizations:', err);
       return [];
+    }
+  };
+
+  const syncUserPermissions = async (userId: string, orgId?: string, email?: string) => {
+    try {
+      const data = await fetchPersonalMemberWorkspaceData(userId, orgId, email);
+      setPersonalMemberData(data);
+      const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+      const full = isOwnerOrAdmin || data.dataScope === 'full';
+      setIsFullAccess(full);
+      setIsRestrictedMember(!full);
+      return data;
+    } catch (err) {
+      console.warn('[AuthProvider] Permission sync error:', err);
+      return null;
     }
   };
 
@@ -191,8 +221,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
             const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
             setActiveOrg(defaultOrg);
-            if (defaultOrg && typeof window !== 'undefined') {
-              localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+            if (defaultOrg) {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+              }
+              await syncUserPermissions(session.user.id, defaultOrg.id, session.user.email);
             }
           } catch (orgErr) {
             console.warn('[AuthProvider] Failed to load organizations:', orgErr);
@@ -221,8 +254,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const savedOrgId = typeof window !== 'undefined' ? localStorage.getItem('echoes_active_org_id') : null;
           const defaultOrg = selectDefaultOrganization(orgs, savedOrgId);
           setActiveOrg(defaultOrg);
-          if (defaultOrg && typeof window !== 'undefined') {
-            localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+          if (defaultOrg) {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('echoes_active_org_id', defaultOrg.id);
+            }
+            await syncUserPermissions(session.user.id, defaultOrg.id, session.user.email);
           }
         } catch (orgErr) {
           console.warn('[AuthProvider] Failed to load organizations on auth change:', orgErr);
@@ -230,6 +266,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUserOrgs([]);
         setActiveOrg(null);
+        setPersonalMemberData(null);
+        setIsRestrictedMember(false);
+        setIsFullAccess(true);
         // CRITICAL FIX: Only remove active org ID on explicit SIGNED_OUT event!
         // Do NOT clear on transient INITIAL_SESSION null states during page refresh token hydration.
         if (event === 'SIGNED_OUT' && typeof window !== 'undefined') {
@@ -261,14 +300,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isMounted, isSplashCompleted, isLoading, user, pathname]);
 
-  const switchOrg = (orgId: string) => {
+  const switchOrg = async (orgId: string) => {
     if (orgId === LEGACY_ORG_ID) return;
     const target = userOrgs.find((o) => o.id === orgId);
-    if (target) {
+    if (target && user) {
+      setIsLoading(true);
       setActiveOrg(target);
       if (typeof window !== 'undefined') {
         localStorage.setItem('echoes_active_org_id', target.id);
       }
+      await syncUserPermissions(user.id, target.id, user.email);
+      setIsLoading(false);
     }
   };
 
@@ -279,6 +321,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!activeOrg && orgs.length > 0) {
       const defaultOrg = selectDefaultOrganization(orgs, null);
       setActiveOrg(defaultOrg);
+      if (defaultOrg) {
+        await syncUserPermissions(user.id, defaultOrg.id, user.email);
+      }
     }
   };
 
@@ -291,12 +336,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        console.error('[AuthProvider createOrg Error]:', error.message);
         return { success: false, error: error.message };
       }
 
       await refreshOrgs();
-      if (data && data.id) {
-        switchOrg(data.id);
+      const newOrgId = typeof data === 'string' ? data : data?.id;
+      if (newOrgId) {
+        switchOrg(newOrgId);
       }
       return { success: true };
     } catch (err: any) {
@@ -307,17 +354,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const joinOrgWithCode = async (code: string) => {
     if (!supabase || !user) return { success: false, error: 'Not authenticated' };
     try {
-      const { data, error } = await supabase.rpc('join_organization_with_code', {
+      const res = await supabase.rpc('join_organization_with_code', {
         p_invite_code: code.trim(),
       });
 
-      if (error) {
-        return { success: false, error: error.message };
+      if (res.error) {
+        console.error('[AuthProvider joinOrgWithCode Error]:', res.error.message);
+        return { success: false, error: res.error.message };
       }
 
       await refreshOrgs();
-      if (data && data.id) {
-        switchOrg(data.id);
+      const joinedOrgId = typeof res.data === 'string' ? res.data : res.data?.id;
+      if (joinedOrgId) {
+        switchOrg(joinedOrgId);
       }
       return { success: true };
     } catch (err: any) {
@@ -327,24 +376,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('echoes_active_org_id');
-      window.location.href = '/login';
+    try {
+      console.log('[AuthProvider] Triggering signOut sequence...');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('echoes_active_org_id');
+        localStorage.removeItem('user_organizations');
+      }
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      setActiveOrg(null);
+      setUserOrgs([]);
+      setPersonalMemberData(null);
+      setIsRestrictedMember(false);
+      setIsFullAccess(true);
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    } catch (err) {
+      console.error('[AuthProvider signOut error]:', err);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('echoes_active_org_id');
+        window.location.href = '/login';
+      }
     }
   };
 
-  // Hard gate: Render initial splash loader on client only if splash sequence has not completed yet
-  // On server/initial hydration pass (isMounted === false), render children directly to guarantee 100% hydration matching
-  if (isMounted && !isSplashCompleted) {
+  // Hard gate: Render minimalist eclipse loader until auth & workspace data loading completes
+  if (isMounted && (!isSplashCompleted || isLoading)) {
     return (
       <LogoLoader
         size="fullscreen"
         onComplete={() => {
-          console.log('[AuthProvider Hard Gate] Splash screen sequence onComplete fired. Unlocking app render.');
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('echoes_splash_completed', 'true');
-          }
           setIsSplashCompleted(true);
         }}
       />
@@ -359,6 +422,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         activeOrg,
         userOrgs,
         isLoading,
+        isRestrictedMember,
+        isFullAccess,
+        personalMemberData,
         switchOrg,
         createOrg,
         joinOrgWithCode,

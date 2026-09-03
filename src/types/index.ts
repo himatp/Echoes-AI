@@ -8,6 +8,7 @@ export interface Organization {
   name: string;
   slug: string;
   inviteCode: string;
+  role?: 'owner' | 'admin' | 'member';
   createdAt: string;
 }
 

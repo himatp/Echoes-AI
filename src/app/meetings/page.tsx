@@ -11,30 +11,17 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
 import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
-export default function MeetingsListPage() {
-  const { user, activeOrg } = useAuth();
+export default function MeetingsPage() {
+  const { user, activeOrg, isRestrictedMember, personalMemberData } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
-  const [portalData, setPortalData] = useState<any>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('newest');
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   const refreshMeetings = () => {
     setMeetings(getStoredMeetings());
   };
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
-        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
-        if (!isOwnerOrAdmin) {
-          setIsRestrictedMember(true);
-          setPortalData(data);
-        } else {
-          setIsRestrictedMember(false);
-        }
-      });
-    }
-  }, [user?.id, activeOrg?.id]);
 
   useEffect(() => {
     refreshMeetings();
@@ -48,10 +35,10 @@ export default function MeetingsListPage() {
   if (isRestrictedMember) {
     return (
       <MemberPortalView
-        initialMeetings={portalData?.meetings || []}
-        initialActionItems={portalData?.actionItems || []}
-        initialTeamMember={portalData?.teamMember}
-        initialOrgMember={portalData?.organizationMember}
+        initialMeetings={personalMemberData?.meetings || []}
+        initialActionItems={personalMemberData?.actionItems || []}
+        initialTeamMember={personalMemberData?.teamMember}
+        initialOrgMember={personalMemberData?.organizationMember}
       />
     );
   }
@@ -65,10 +52,32 @@ export default function MeetingsListPage() {
     }
   };
 
-  const filteredMeetings = meetings.filter((m) =>
-    m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.summary.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMeetings = meetings
+    .filter((m) => {
+      const matchSearch =
+        m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.actionItems || []).some((a) => a.title.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchStatus =
+        filterStatus === 'all'
+          ? true
+          : filterStatus === 'completed'
+          ? m.status === 'completed' || (!m.status && m.summary && m.summary !== 'EMPTY')
+          : m.status === filterStatus;
+
+      return matchSearch && matchStatus;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'newest') return new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (sortBy === 'oldest') return new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (sortBy === 'title-asc') return a.title.localeCompare(b.title);
+      if (sortBy === 'title-desc') return b.title.localeCompare(a.title);
+      if (sortBy === 'health-desc') return (b.healthScore?.score || 85) - (a.healthScore?.score || 85);
+      if (sortBy === 'health-asc') return (a.healthScore?.score || 85) - (b.healthScore?.score || 85);
+      if (sortBy === 'action-items-desc') return (b.actionItems?.length || 0) - (a.actionItems?.length || 0);
+      return 0;
+    });
 
   return (
     <div className="min-h-screen bg-canvas pb-16">
@@ -94,19 +103,52 @@ export default function MeetingsListPage() {
           </Link>
         </div>
 
-        {/* Search Bar */}
-        <div className="card-white p-4 mb-4 flex items-center gap-3">
-          <Search className="w-4 h-4 text-zinc-400" />
-          <input
-            type="text"
-            placeholder="Search meetings by title, summary, or action items..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-transparent focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-500"
-          />
+        {/* Search & Sort / Filter Control Bar */}
+        <div className="card-white p-4 mb-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="flex items-center gap-3 flex-1 bg-zinc-50 dark:bg-zinc-900/60 px-3 py-2 rounded-xl border border-zinc-100 dark:border-zinc-800">
+            <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search meetings by title, summary, or action items..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-transparent focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-500"
+            />
+          </div>
+
+          {/* Filter & Sort Controls */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Filter Status Dropdown */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="all">All Statuses</option>
+              <option value="completed">Completed</option>
+              <option value="draft">Draft</option>
+              <option value="uploaded">Uploaded</option>
+            </select>
+
+            {/* Sort Dropdown */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="newest">📅 Date: Newest First</option>
+              <option value="oldest">📅 Date: Oldest First</option>
+              <option value="title-asc">🔤 Title: A → Z</option>
+              <option value="title-desc">🔤 Title: Z → A</option>
+              <option value="health-desc">⚡ Health: Highest First</option>
+              <option value="health-asc">⚡ Health: Lowest First</option>
+              <option value="action-items-desc">📋 Action Items: Most First</option>
+            </select>
+          </div>
         </div>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium mb-6">
-          Click any meeting to see its full summary, health score, and action items.
+          Showing {filteredMeetings.length} of {meetings.length} meetings. Click any meeting to view full details.
         </p>
 
         {/* Meetings List Grid */}

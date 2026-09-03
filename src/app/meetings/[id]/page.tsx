@@ -15,8 +15,10 @@ import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 import { syncTaskStatusToSupabase, fetchMeetingByIdFromSupabase } from '@/lib/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function MeetingDetailPage() {
+  const { activeOrg, userOrgs } = useAuth();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -358,6 +360,16 @@ export default function MeetingDetailPage() {
     let successCount = 0;
     const errors: string[] = [];
 
+    const targetOrg = activeOrg || userOrgs?.find((o) => o.id === meeting?.organizationId) || userOrgs?.[0];
+    const inviteCode = targetOrg?.inviteCode || (targetOrg as any)?.invite_code;
+    const workspaceName = targetOrg?.name;
+    const origin = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    const inviteLink = inviteCode ? `${origin}/invite/${inviteCode}` : undefined;
+
+    if (!inviteCode) {
+      console.warn('[Email Digest] Could not resolve workspace invite code for recipient payload');
+    }
+
     try {
       for (const target of allTargets) {
         const payload = {
@@ -365,9 +377,10 @@ export default function MeetingDetailPage() {
           recipientEmail: target.email,
           assigneeName: target.assigneeName,
           meeting,
+          workspaceName,
+          workspaceInviteCode: inviteCode,
+          workspaceInviteLink: inviteLink,
         };
-
-        console.log(`[Email Digest Request Payload] Sending to ${target.email}:`, JSON.stringify(payload, null, 2));
 
         const res = await fetch('/api/email/digest', {
           method: 'POST',

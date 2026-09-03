@@ -18,6 +18,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 import LogoLoader from '@/components/ui/LogoLoader';
+import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 const DEMO_TRANSCRIPT_DEFAULT = `Sarah Chen: Welcome everyone to our Sprint 15 sync. Today we are reviewing product delivery milestones and action item assignments.
 Alex Kumar: I will take the task to finalize the automated meeting summary & speaker timeline feature.
@@ -26,7 +27,7 @@ Marcus Vance: I will handle the Google Calendar sync integration for team meetin
 
 function NewMeetingContent() {
   const router = useRouter();
-  const { user, activeOrg, isLoading: isAuthLoading } = useAuth();
+  const { user, activeOrg, isRestrictedMember, personalMemberData, isLoading: isAuthLoading } = useAuth();
   const [meetingTitle, setMeetingTitle] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [transcriptText, setTranscriptText] = useState('');
@@ -207,6 +208,20 @@ function NewMeetingContent() {
     console.log(`[Stage 1 Auto-Save] Auto-saving uploaded audio meeting ${mtgId} with status='uploaded'...`);
     saveMeeting(uploadedMeeting);
     return uploadedMeeting;
+  };
+
+  // REAL-TIME TITLE SYNC HELPER
+  const handleTitleChange = (val: string) => {
+    setMeetingTitle(val);
+
+    if (activeMeetingIdRef.current) {
+      const existing = getMeetingById(activeMeetingIdRef.current);
+      if (existing) {
+        const cleanTitle = val.trim() ? val.trim().replace(/\.[^/.]+$/, '') : 'Untitled Meeting';
+        const updatedMeeting = { ...existing, title: cleanTitle };
+        saveMeeting(updatedMeeting);
+      }
+    }
   };
 
   // STAGE 2: AUTO-SAVE ON TRANSCRIPTION HELPER FUNCTION
@@ -495,7 +510,6 @@ function NewMeetingContent() {
     };
 
     setManualTasksList((prev) => [newTask, ...prev]);
-    setTranscriptText((prev) => `${prev}\n${manualTaskAssignee}: ${manualTaskInput.trim()}`);
     setManualTaskSuccessMsg(`Task card created for ${manualTaskAssignee}: "${manualTaskInput.trim()}"`);
     setManualTaskInput('');
 
@@ -569,14 +583,12 @@ function NewMeetingContent() {
       segmentsToProcess = diarizeRes.segments;
       if (diarizeRes.warning) setEngineWarning(diarizeRes.warning);
 
-      // Automatically sync clean continuous text to the transcript text area if empty!
-      if (!transcriptText.trim()) {
-        const cleanContinuousTranscript = diarizeRes.segments
-          .map((s) => s.text.trim())
-          .filter(Boolean)
-          .join(' ');
-        setTranscriptText(cleanContinuousTranscript);
-      }
+      // Always sync clean continuous audio transcript to the transcript text area
+      const cleanContinuousTranscript = diarizeRes.segments
+        .map((s) => s.text.trim())
+        .filter(Boolean)
+        .join(' ');
+      setTranscriptText(cleanContinuousTranscript);
 
       // Auto-save Stage 2 draft with status: 'transcribed'
       const stage2Title = meetingTitle.trim() || uploadedFileName?.replace(/\.[^/.]+$/, '') || 'Transcribed Meeting';
@@ -686,6 +698,17 @@ function NewMeetingContent() {
     setProcessedMeeting(aiRes.meeting);
     lastProcessedTranscriptRef.current = transcriptText.trim();
   };
+
+  if (isRestrictedMember) {
+    return (
+      <MemberPortalView
+        initialMeetings={personalMemberData?.meetings || []}
+        initialActionItems={personalMemberData?.actionItems || []}
+        initialTeamMember={personalMemberData?.teamMember}
+        initialOrgMember={personalMemberData?.organizationMember}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-canvas pb-16">
@@ -842,7 +865,7 @@ function NewMeetingContent() {
                 <input
                   type="text"
                   value={meetingTitle}
-                  onChange={(e) => setMeetingTitle(e.target.value)}
+                  onChange={(e) => handleTitleChange(e.target.value)}
                   placeholder="e.g. Sprint 15 Architecture & Task Allocation"
                   className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 placeholder:font-normal"
                 />

@@ -20,10 +20,9 @@ import { fetchPersonalMemberWorkspaceData, leaveOrganizationFromSupabase, delete
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
-  const { user, activeOrg, userOrgs, switchOrg, signOut, refreshOrgs } = useAuth();
+  const { user, activeOrg, userOrgs, switchOrg, signOut, refreshOrgs, isRestrictedMember } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
 
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
@@ -38,19 +37,6 @@ export const Navbar: React.FC = () => {
   } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (user?.id) {
-      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
-        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
-        if (!isOwnerOrAdmin) {
-          setIsRestrictedMember(true);
-        } else {
-          setIsRestrictedMember(false);
-        }
-      });
-    }
-  }, [user?.id, activeOrg?.id]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -296,6 +282,7 @@ export const Navbar: React.FC = () => {
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {userOrgs.map((org) => {
                         const isActive = activeOrg && org.id === activeOrg.id;
+                        const isOrgOwner = org.role === 'owner';
                         return (
                           <div
                             key={org.id}
@@ -313,18 +300,17 @@ export const Navbar: React.FC = () => {
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {isActive && (
                                 <span className="text-[10px] opacity-90 font-mono">
-                                  {isRestrictedMember ? '🔒 Assigned' : '👑 Owner'}
+                                  {isOrgOwner ? '👑 Owner' : '🔒 Member'}
                                 </span>
                               )}
                               {userOrgs.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
-                                    const isCurrentRestricted = isActive && isRestrictedMember;
-                                    if (isCurrentRestricted) {
-                                      handleLeaveWorkspace(e, org.id, org.name);
-                                    } else {
+                                    if (isOrgOwner) {
                                       handleDeleteWorkspace(e, org.id, org.name);
+                                    } else {
+                                      handleLeaveWorkspace(e, org.id, org.name);
                                     }
                                   }}
                                   className={`p-1 rounded-lg transition-colors ${
@@ -332,12 +318,12 @@ export const Navbar: React.FC = () => {
                                       ? 'hover:bg-indigo-700 text-indigo-200 hover:text-white'
                                       : 'hover:bg-red-500/20 text-zinc-400 hover:text-red-500'
                                   }`}
-                                  title={isActive && isRestrictedMember ? `Leave ${org.name}` : `Delete ${org.name}`}
+                                  title={isOrgOwner ? `Delete ${org.name}` : `Leave ${org.name}`}
                                 >
-                                  {isActive && isRestrictedMember ? (
-                                    <DoorOpen className="w-3.5 h-3.5" />
-                                  ) : (
+                                  {isOrgOwner ? (
                                     <Trash2 className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <DoorOpen className="w-3.5 h-3.5" />
                                   )}
                                 </button>
                               )}

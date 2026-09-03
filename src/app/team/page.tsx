@@ -21,27 +21,25 @@ import {
   fetchOrganizationMembersFromSupabase, fetchPersonalMemberWorkspaceData
 } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function TeamPage() {
   const router = useRouter();
-  const { activeOrg, user } = useAuth();
+  const { activeOrg, user, isRestrictedMember, personalMemberData } = useAuth();
   const [activeTab, setActiveTab] = useState<'members' | 'groups'>('members');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [groups, setGroups] = useState<MeetingGroup[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrganizationMember[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
-  // Role Guard: Redirect invited teammates away from Team & Groups page
-  useEffect(() => {
-    if (user?.id) {
-      fetchPersonalMemberWorkspaceData(user.id).then((data) => {
-        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
-        if (data.dataScope === 'assigned_only' && !isOwnerOrAdmin) {
-          router.push('/');
-        }
-      });
-    }
-  }, [user?.id, router]);
+  // Search, Sort & Filter State
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberSortBy, setMemberSortBy] = useState<'name-asc' | 'name-desc' | 'role-asc' | 'full-access-first' | 'assigned-only-first' | 'newest'>('name-asc');
+  const [memberFilterScope, setMemberFilterScope] = useState<'all' | 'full' | 'assigned_only'>('all');
+
+  const [groupSearch, setGroupSearch] = useState('');
+  const [groupSortBy, setGroupSortBy] = useState<'name-asc' | 'name-desc' | 'members-desc' | 'members-asc'>('name-asc');
 
   // Member Modal State
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -74,14 +72,91 @@ export default function TeamPage() {
     }
   }, [activeOrg?.id]);
 
+  // Role Guard: Redirect invited teammates away from Team & Groups page
+  useEffect(() => {
+    if (user?.id) {
+      fetchPersonalMemberWorkspaceData(user.id).then((data) => {
+        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
+        if (data.dataScope === 'assigned_only' && !isOwnerOrAdmin) {
+          router.push('/');
+        }
+      });
+    }
+  }, [user?.id, router]);
+
+  const filteredMembers = members
+    .filter((m) => {
+      const matchSearch =
+        m.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
+        m.email.toLowerCase().includes(memberSearch.toLowerCase()) ||
+        (m.role || '').toLowerCase().includes(memberSearch.toLowerCase());
+
+      const om = orgMembers.find((o) => (m.userId && o.userId === m.userId) || (o as any).email?.toLowerCase() === m.email.toLowerCase());
+      const effectiveScope = m.dataScope || om?.dataScope || 'assigned_only';
+      const isOwnerOrAdmin = om?.role === 'owner' || om?.role === 'admin';
+      const isFull = isOwnerOrAdmin || effectiveScope === 'full';
+
+      const matchScope =
+        memberFilterScope === 'all'
+          ? true
+          : memberFilterScope === 'full'
+          ? isFull
+          : !isFull;
+
+      return matchSearch && matchScope;
+    })
+    .sort((a, b) => {
+      const omA = orgMembers.find((o) => (a.userId && o.userId === a.userId) || (o as any).email?.toLowerCase() === a.email.toLowerCase());
+      const omB = orgMembers.find((o) => (b.userId && o.userId === b.userId) || (o as any).email?.toLowerCase() === b.email.toLowerCase());
+      const scopeA = a.dataScope || omA?.dataScope || 'assigned_only';
+      const scopeB = b.dataScope || omB?.dataScope || 'assigned_only';
+      const isFullA = omA?.role === 'owner' || omA?.role === 'admin' || scopeA === 'full';
+      const isFullB = omB?.role === 'owner' || omB?.role === 'admin' || scopeB === 'full';
+
+      if (memberSortBy === 'name-asc') return a.name.localeCompare(b.name);
+      if (memberSortBy === 'name-desc') return b.name.localeCompare(a.name);
+      if (memberSortBy === 'role-asc') return (a.role || '').localeCompare(b.role || '');
+      if (memberSortBy === 'full-access-first') return (isFullB ? 1 : 0) - (isFullA ? 1 : 0);
+      if (memberSortBy === 'assigned-only-first') return (isFullA ? 1 : 0) - (isFullB ? 1 : 0);
+      if (memberSortBy === 'newest') return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      return 0;
+    });
+
+  const filteredGroups = groups
+    .filter((g) => g.name.toLowerCase().includes(groupSearch.toLowerCase()))
+    .sort((a, b) => {
+      if (groupSortBy === 'name-asc') return a.name.localeCompare(b.name);
+      if (groupSortBy === 'name-desc') return b.name.localeCompare(a.name);
+      if (groupSortBy === 'members-desc') return (b.memberIds?.length || 0) - (a.memberIds?.length || 0);
+      if (groupSortBy === 'members-asc') return (a.memberIds?.length || 0) - (b.memberIds?.length || 0);
+      return 0;
+    });
+
+  if (isRestrictedMember) {
+    return (
+      <MemberPortalView
+        initialMeetings={personalMemberData?.meetings || []}
+        initialActionItems={personalMemberData?.actionItems || []}
+        initialTeamMember={personalMemberData?.teamMember}
+        initialOrgMember={personalMemberData?.organizationMember}
+      />
+    );
+  }
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const isCurrentUserOwner = orgMembers.some((om) => om.userId === user?.id && om.role === 'owner');
+
   const handleDataScopeChange = async (member: TeamMember, newScope: DataScope) => {
-    const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && 
-                    orgMembers.some((om) => om.userId === user?.id && om.role === 'owner');
+    if (!isCurrentUserOwner) {
+      showToast('⚠️ Only the Workspace Owner can modify team access levels.');
+      return;
+    }
+
+    const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && isCurrentUserOwner;
 
     if (isOwner) {
       showToast('⚠️ Workspace Owners are forced to Full Workspace Access.');
@@ -122,8 +197,6 @@ export default function TeamPage() {
     }
     setIsMemberModalOpen(true);
   };
-
-  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
   const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,8 +386,53 @@ export default function TeamPage() {
 
         {/* TAB 1: TEAM MEMBERS DIRECTORY */}
         {activeTab === 'members' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {members.map((member) => {
+          <div>
+            {/* Member Search, Filter & Sort Bar */}
+            <div className="card-white p-4 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Search Input */}
+              <div className="flex items-center gap-3 flex-1 bg-zinc-50 dark:bg-zinc-900/60 px-3 py-2 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search team members by name, email, or role..."
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  className="w-full text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-transparent focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-500"
+                />
+              </div>
+
+              {/* Filter & Sort Controls */}
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                {/* Scope Filter Dropdown */}
+                <select
+                  value={memberFilterScope}
+                  onChange={(e: any) => setMemberFilterScope(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Access Scopes</option>
+                  <option value="full">⚡ Full Workspace Access</option>
+                  <option value="assigned_only">🔒 Assigned Items Only</option>
+                </select>
+
+                {/* Sort Dropdown */}
+                <select
+                  value={memberSortBy}
+                  onChange={(e: any) => setMemberSortBy(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="name-asc">🔤 Name: A → Z</option>
+                  <option value="name-desc">🔤 Name: Z → A</option>
+                  <option value="role-asc">👔 Role: A → Z</option>
+                  <option value="full-access-first">⚡ Full Access First</option>
+                  <option value="assigned-only-first">🔒 Assigned Only First</option>
+                  <option value="newest">📅 Date Joined: Newest First</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Members Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredMembers.map((member) => {
               const om = orgMembers.find((m) => (member.userId && m.userId === member.userId) || m.userId === member.id);
               const isOwner = member.email.toLowerCase() === user?.email?.toLowerCase() && 
                               orgMembers.some((m) => m.userId === user?.id && m.role === 'owner');
@@ -436,13 +554,14 @@ export default function TeamPage() {
                       {/* Dribbble Fluid Elastic Toggle Switch Track */}
                       <motion.button
                         type="button"
-                        disabled={isOwner}
+                        disabled={isOwner || !isCurrentUserOwner}
                         onClick={() => handleDataScopeChange(member, currentScope === 'full' ? 'assigned_only' : 'full')}
-                        whileTap={{ scale: isOwner ? 1 : 0.92 }}
-                        whileHover={{ scale: isOwner ? 1 : 1.06 }}
+                        whileTap={{ scale: (isOwner || !isCurrentUserOwner) ? 1 : 0.92 }}
+                        whileHover={{ scale: (isOwner || !isCurrentUserOwner) ? 1 : 1.06 }}
+                        title={!isCurrentUserOwner ? "Only the Workspace Owner can modify team access levels" : undefined}
                         aria-label="Toggle Data Scope Access Level"
                         className={`relative inline-flex h-8 w-14 flex-shrink-0 items-center rounded-full p-1 border transition-colors duration-300 focus:outline-none overflow-hidden ${
-                          isOwner
+                          (isOwner || !isCurrentUserOwner)
                             ? 'bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 cursor-not-allowed opacity-80'
                             : currentScope === 'full'
                             ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 border-emerald-400/80 shadow-lg shadow-emerald-500/25'
@@ -496,12 +615,44 @@ export default function TeamPage() {
               );
             })}
           </div>
+        </div>
         )}
 
         {/* TAB 2: REUSABLE MEETING GROUPS */}
         {activeTab === 'groups' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groups.map((group) => {
+          <div>
+            {/* Group Search & Sort Bar */}
+            <div className="card-white p-4 mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Search Input */}
+              <div className="flex items-center gap-3 flex-1 bg-zinc-50 dark:bg-zinc-900/60 px-3 py-2 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                <Layers className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search meeting groups by name..."
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  className="w-full text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-transparent focus:outline-none placeholder-zinc-400 dark:placeholder-zinc-500"
+                />
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-2">
+                <select
+                  value={groupSortBy}
+                  onChange={(e: any) => setGroupSortBy(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="name-asc">🔤 Group Name: A → Z</option>
+                  <option value="name-desc">🔤 Group Name: Z → A</option>
+                  <option value="members-desc">👥 Members: Most First</option>
+                  <option value="members-asc">👥 Members: Least First</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Groups Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredGroups.map((group) => {
               const groupMembers = members.filter((m) => {
                 if (!group.memberIds || group.memberIds.length === 0) return false;
                 return group.memberIds.some((idOrVal) => {
@@ -567,6 +718,7 @@ export default function TeamPage() {
               );
             })}
           </div>
+        </div>
         )}
 
         {/* MEMBER MODAL */}

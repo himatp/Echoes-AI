@@ -16,16 +16,12 @@ import { fetchPersonalMemberWorkspaceData, fetchOrganizationMembersFromSupabase 
 import { MemberPortalView } from '@/components/portal/MemberPortalView';
 
 export default function DashboardPage() {
-  const { user, activeOrg } = useAuth();
+  const { user, activeOrg, isRestrictedMember, personalMemberData } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [tasks, setTasks] = useState<ActionItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [greeting, setGreeting] = useState('Good morning');
   const [needsReviewFilter, setNeedsReviewFilter] = useState<'all' | 'uploaded' | 'transcribed' | 'draft'>('all');
-  
-  // Restricted Portal View State
-  const [isRestrictedMember, setIsRestrictedMember] = useState(false);
-  const [portalData, setPortalData] = useState<any>(null);
 
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Friend';
 
@@ -35,19 +31,6 @@ export default function DashboardPage() {
     setMeetings(getStoredMeetings());
     setTasks(getStoredTasks());
     setIsLoaded(true);
-
-    // Check member access level scope specifically for activeOrg
-    if (user?.id) {
-      fetchPersonalMemberWorkspaceData(user.id, activeOrg?.id).then((data) => {
-        const isOwnerOrAdmin = data.organizationMember?.role === 'owner' || data.organizationMember?.role === 'admin';
-        if (!isOwnerOrAdmin) {
-          setIsRestrictedMember(true);
-          setPortalData(data);
-        } else {
-          setIsRestrictedMember(false);
-        }
-      });
-    }
 
     // 2. Fetch live PostgreSQL remote data for active org
     if (activeOrg?.id) {
@@ -109,10 +92,10 @@ export default function DashboardPage() {
   if (isRestrictedMember) {
     return (
       <MemberPortalView
-        initialMeetings={portalData?.meetings || []}
-        initialActionItems={portalData?.actionItems || []}
-        initialTeamMember={portalData?.teamMember}
-        initialOrgMember={portalData?.organizationMember}
+        initialMeetings={personalMemberData?.meetings || []}
+        initialActionItems={personalMemberData?.actionItems || []}
+        initialTeamMember={personalMemberData?.teamMember}
+        initialOrgMember={personalMemberData?.organizationMember}
       />
     );
   }
