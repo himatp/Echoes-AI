@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Echoes AI 2.0 — Visual User Guide & Master Manual</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #090D16;
+      color: #E2E8F0;
+      line-height: 1.45;
+      font-size: 12px;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      height: 297mm;
+      padding: 16mm 18mm 18mm 18mm;
+      position: relative;
+      page-break-after: always;
+      background: #0A0F1D;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Ambient background glows */
+    .glow-radial {
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      filter: blur(100px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-indigo {
+      background: rgba(99, 102, 241, 0.14);
+      top: -120px;
+      right: -100px;
+    }
+    .glow-purple {
+      background: rgba(168, 85, 247, 0.12);
+      bottom: -100px;
+      left: -100px;
+    }
+    .glow-cyan {
+      background: rgba(6, 182, 212, 0.12);
+      top: 35%;
+      right: -150px;
+    }
+
+    .page-content {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header & Footer */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+      margin-bottom: 14px;
+    }
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 14px;
+      color: #FFFFFF;
+      letter-spacing: -0.5px;
+    }
+    .header-logo span.badge {
+      background: linear-gradient(135deg, #4F46E5, #7C3AED);
+      color: white;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+    }
+    .header-tagline {
+      font-size: 9.5px;
+      color: #94A3B8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .footer-bar {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 8px;
+      font-size: 9px;
+      color: #64748B;
+      font-weight: 600;
+    }
+    .footer-bar .page-num {
+      color: #A5B4FC;
+      font-weight: 700;
+    }
+
+    /* Badges & Titles */
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #818CF8;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      margin-bottom: 6px;
+    }
+    .step-number {
+      width: 22px;
+      height: 22px;
+      background: linear-gradient(135deg, #4F46E5, #9333EA);
+      border-radius: 50%;
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      margin-right: 6px;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+    h2 {
+      font-size: 17px;
+      font-weight: 800;
+      color: #F8FAFC;
+      letter-spacing: -0.4px;
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+    }
+    p.subtitle {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-bottom: 10px;
+      line-height: 1.35;
+    }
+
+    /* Cards & Grids */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .card-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .card {
+      background: rgba(18, 24, 40, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .card.highlight {
+      border-color: rgba(99, 102, 241, 0.35);
+      background: linear-gradient(145deg, rgba(30, 39, 70, 0.6), rgba(15, 20, 35, 0.8));
+    }
+    .card.accent-emerald {
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .card.accent-amber {
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+
+    /* Screenshot Frame */
+    .screenshot-frame {
+      border-radius: 9px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+      background: #0F172A;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .screenshot-frame .browser-bar {
+      height: 16px;
+      background: #1E293B;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 4px;
+    }
+    .browser-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+    }
+    .browser-dot.red { background: #EF4444; }
+    .browser-dot.yellow { background: #F59E0B; }
+    .browser-dot.green { background: #10B981; }
+    .screenshot-frame img {
+      width: 100%;
+      height: auto;
+      max-height: 195px;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Process Step Box */
+    .step-box {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-left: 3px solid #6366F1;
+      padding: 8px 10px;
+      border-radius: 7px;
+      margin-bottom: 7px;
+    }
+    .step-box.green { border-left-color: #10B981; }
+    .step-box.amber { border-left-color: #F59E0B; }
+    .step-box.cyan { border-left-color: #06B6D4; }
+    .step-title {
+      font-weight: 700;
+      color: #F8FAFC;
+      font-size: 11.5px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 2px;
+    }
+    .step-desc {
+      font-size: 10.5px;
+      color: #94A3B8;
+      line-height: 1.35;
+    }
+
+    /* Pill Badges */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+    .pill.indigo { background: rgba(99, 102, 241, 0.2); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .pill.emerald { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .pill.amber { background: rgba(245, 158, 11, 0.2); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .pill.cyan { background: rgba(6, 182, 212, 0.2); color: #67E8F9; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .pill.red { background: rgba(239, 68, 68, 0.2); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    /* Callout Alert */
+    .callout {
+      display: flex;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      margin-top: auto;
+      margin-bottom: 6px;
+    }
+    .callout-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+    .callout-content {
+      font-size: 10.5px;
+      color: #CBD5E1;
+      line-height: 1.35;
+    }
+    .callout-content strong {
+      color: #FFFFFF;
+    }
+
+    /* Cover Page */
+    .cover-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      text-align: center;
+      padding: 24px 10px;
+    }
+    .cover-hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #C7D2FE;
+      padding: 5px 14px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin: 0 auto 16px auto;
+    }
+    .cover-title {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #FFFFFF 30%, #A5B4FC 80%, #6366F1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+    .cover-subtitle {
+      font-size: 14px;
+      color: #94A3B8;
+      max-width: 500px;
+      margin: 0 auto 24px auto;
+      line-height: 1.45;
+    }
+    .cover-feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      text-align: left;
+      margin-bottom: 20px;
+    }
+    .cover-feature-card {
+      background: rgba(18, 24, 40, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .cover-feature-card .icon {
+      font-size: 18px;
+      margin-bottom: 6px;
+    }
+    .cover-feature-card h4 {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 3px;
+    }
+    .cover-feature-card p {
+      font-size: 10px;
+      color: #94A3B8;
+      line-height: 1.3;
+    }
+    .toc-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 10px;
+      padding: 12px 16px;
+      text-align: left;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .toc-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10.5px;
+      color: #CBD5E1;
+    }
+    .toc-num {
+      width: 17px;
+      height: 17px;
+      background: #312E81;
+      color: #A5B4FC;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9.5px;
+      font-weight: 800;
+    }
+
+    /* Matrix Table */
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+      margin-top: 4px;
+    }
+    .matrix-table th {
+      text-align: left;
+      padding: 5px 7px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #94A3B8;
+      font-weight: 700;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .matrix-table td {
+      padding: 5px 7px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #E2E8F0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== PAGE 1: COVER & OVERVIEW ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-indigo"></div>
+    <div class="glow-radial glow-purple"></div>
+    <div class="page-content cover-container">
+      <div>
+        <div class="cover-hero-badge">
+          <span>⚡ Official Product Manual</span> &bull; <span>Version 2.0</span>
+        </div>
+        <div class="cover-title">
+          Echoes AI 2.0
+        </div>
+        <div style="font-size: 16px; font-weight: 700; color: #C7D2FE; margin-bottom: 10px; letter-spacing: -0.3px;">
+          Visual Master Guide &amp; Step-by-Step Walkthrough
+        </div>
+        <div class="cover-subtitle">
+          Transform live voice and uploaded meeting conversations into structured intelligence, speaker-attributed transcripts, automated Kanban tasks, and meeting health scores.
+        </div>
+      </div>
+
+      <!-- 3 Key Value Props -->
+      <div class="cover-feature-grid">
+        <div class="cover-feature-card">
+          <div class="icon">🎙️</div>
+          <h4>Capture &amp; Diarize</h4>
+          <p>Real-time browser mic recording or high-speed upload with AssemblyAI multi-speaker voice attribution.</p>
+        </div>
+        <div class="cover-feature-card">
+          <div class="icon">🧠</div>
+          <h4>Gemini AI Intelligence</h4>
+          <p>Automated synthesis of executive summaries, key decisions, prioritized action items, and health ratings.</p>
+        </div>
+        <div class="cover-feature-card">
+          <div class="icon">🔒</div>
+          <h4>Enterprise Scopes</h4>
+          <p>Multi-tenant organization RLS with default "Assigned Items Only" member protections and address-bar guards.</p>
+        </div>
+      </div>
+
+      <!-- Visual Table of Contents -->
+      <div class="toc-card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 11px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 0.5px;">User Guide Contents</span>
+          <span class="pill indigo">6 High-Impact Sections</span>
+        </div>
+        <div class="toc-grid">
+          <div class="toc-item"><span class="toc-num">1</span> <strong>Sign-In &amp; Multi-Tenant Workspaces</strong></div>
+          <div class="toc-item"><span class="toc-num">4</span> <strong>Kanban Task Board &amp; 1-Click Sync</strong></div>
+          <div class="toc-item"><span class="toc-num">2</span> <strong>Live Audio Recording &amp; File Upload</strong></div>
+          <div class="toc-item"><span class="toc-num">5</span> <strong>Restricted Member Portal &amp; RLS</strong></div>
+          <div class="toc-item"><span class="toc-num">3</span> <strong>AI Diarization &amp; Meeting Health Score</strong></div>
+          <div class="toc-item"><span class="toc-num">6</span> <strong>Revoke Access, Exports &amp; Security</strong></div>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Echoes AI Enterprise Platform &bull; Confidential &amp; Proprietary</span>
+        <span class="page-num">Page 1 of 6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 2: STEP 1 - AUTH & WORKSPACE SETUP ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-indigo"></div>
+    <div class="page-content">
+      <div class="header-bar">
+        <div class="header-logo">
+          <span>Echoes</span> <span class="badge">AI 2.0</span>
+        </div>
+        <div class="header-tagline">Phase 1 &bull; Onboarding &amp; Workspaces</div>
+      </div>
+
+      <div class="section-badge">Step 1 of 5</div>
+      <h2><span class="step-number">1</span> Authentication &amp; Multi-Tenant Setup</h2>
+      <p class="subtitle">Securely access your workspace using Google OAuth or join an existing team organization via an encrypted invite code.</p>
+
+      <!-- Screenshot Frame: Login.png -->
+      <div class="screenshot-frame">
+        <div class="browser-bar">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <span style="font-size: 9px; color: #64748B; margin-left: 6px; font-family: 'JetBrains Mono', monospace;">https://localhost:3000/login</span>
+        </div>
+        <img src="{{LOGIN_IMAGE}}" alt="Login Screen" />
+      </div>
+
+      <!-- Action Cards -->
+      <div class="card-grid">
+        <div class="card highlight">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <h3 style="font-size: 11.5px;">🔑 Google OAuth Sign-In</h3>
+            <span class="pill emerald">Instant</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            Click <strong>"Sign In with Google"</strong> to authenticate via Supabase Auth. Your personal workspace is initialized automatically with Row Level Security (RLS).
+          </p>
+        </div>
+
+        <div class="card highlight">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <h3 style="font-size: 11.5px;">🏢 Join via 6-Digit Code</h3>
+            <span class="pill cyan">Collaborate</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            Invited by a teammate? Enter the 6-character Workspace Code in the login card to immediately bind your account to their organization.
+          </p>
+        </div>
+      </div>
+
+      <!-- Process Steps -->
+      <div class="step-box cyan">
+        <div class="step-title">✨ Switching &amp; Creating Workspaces</div>
+        <div class="step-desc">
+          Click the <strong>Workspace Switcher</strong> in the top navigation bar. Owners can create new organization workspaces, copy 6-digit invite codes, or invite members by per-person link.
+        </div>
+      </div>
+
+      <div class="step-box green">
+        <div class="step-title">🛡️ Role-Based Safety Protections</div>
+        <div class="step-desc">
+          Invited teammates are locked from accidentally deleting workspaces or leaving without admin consent, maintaining uninterrupted enterprise compliance.
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-icon">💡</div>
+        <div class="callout-content">
+          <strong>Pro-Tip for Workspace Owners:</strong> You can create multiple independent client workspaces (e.g. <em>GLS Nexus</em>, <em>Acme Corp</em>) under one login and seamlessly switch between them without logging out.
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Step 1: Workspace Initialization &amp; User Onboarding</span>
+        <span class="page-num">Page 2 of 6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 3: STEP 2 - RECORDING & PROCESSING ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-cyan"></div>
+    <div class="page-content">
+      <div class="header-bar">
+        <div class="header-logo">
+          <span>Echoes</span> <span class="badge">AI 2.0</span>
+        </div>
+        <div class="header-tagline">Phase 2 &bull; Voice Ingestion Engine</div>
+      </div>
+
+      <div class="section-badge">Step 2 of 5</div>
+      <h2><span class="step-number">2</span> Live Audio Recording &amp; File Ingestion</h2>
+      <p class="subtitle">Capture conversations live in real-time or upload pre-recorded meetings across multiple languages.</p>
+
+      <!-- Screenshot Frame: Live_Recorder1.png -->
+      <div class="screenshot-frame">
+        <div class="browser-bar">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <span style="font-size: 9px; color: #64748B; margin-left: 6px; font-family: 'JetBrains Mono', monospace;">https://localhost:3000/new-meeting</span>
+        </div>
+        <img src="{{LIVE_RECORDER_1_IMAGE}}" alt="Live Recorder View" />
+      </div>
+
+      <!-- Execution Grid -->
+      <div class="card-grid-3">
+        <div class="card">
+          <div style="font-size: 16px; margin-bottom: 3px;">🎙️</div>
+          <h3 style="font-size: 11px;">1. Live In-Browser</h3>
+          <p style="font-size: 10px; color: #94A3B8; line-height: 1.3;">
+            Click <strong>"Start Live Recording"</strong>. Echoes utilizes real-time audio chunking, volume meter visualization, and pauses.
+          </p>
+        </div>
+        <div class="card">
+          <div style="font-size: 16px; margin-bottom: 3px;">📁</div>
+          <h3 style="font-size: 11px;">2. Audio File Drop</h3>
+          <p style="font-size: 10px; color: #94A3B8; line-height: 1.3;">
+            Upload .mp3, .wav, .m4a, or .webm. Automatically compressed in-browser before upload to conserve bandwidth.
+          </p>
+        </div>
+        <div class="card">
+          <div style="font-size: 16px; margin-bottom: 3px;">🌐</div>
+          <h3 style="font-size: 11px;">3. Multi-Lingual</h3>
+          <p style="font-size: 10px; color: #94A3B8; line-height: 1.3;">
+            Select English, Hindi, or Gujarati. Transcribes native phrasing and translates action items automatically.
+          </p>
+        </div>
+      </div>
+
+      <!-- Step Walkthrough -->
+      <div class="step-box">
+        <div class="step-title">⚙️ Audio Pipeline Architecture</div>
+        <div class="step-desc">
+          When recording stops, Echoes uploads the encrypted audio directly to your dedicated Supabase Storage bucket, triggering the AssemblyAI diarization webhook and Gemini extraction pipeline.
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-icon">⚡</div>
+        <div class="callout-content">
+          <strong>Audio Safety Shield:</strong> If your network disconnects during a live recording, Echoes stores local cached audio chunks in browser IndexedDB to prevent meeting audio loss.
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Step 2: Real-time Capture &amp; Multi-format Audio Ingestion</span>
+        <span class="page-num">Page 3 of 6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 4: STEP 3 - AI EXTRACTION & HEALTH SCORE ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-purple"></div>
+    <div class="page-content">
+      <div class="header-bar">
+        <div class="header-logo">
+          <span>Echoes</span> <span class="badge">AI 2.0</span>
+        </div>
+        <div class="header-tagline">Phase 3 &bull; Intelligence &amp; Metrics</div>
+      </div>
+
+      <div class="section-badge">Step 3 of 5</div>
+      <h2><span class="step-number">3</span> AI Diarization &amp; Meeting Health Score</h2>
+      <p class="subtitle">Automated speaker identification, structured executive summaries, and quantitative conversation health metrics.</p>
+
+      <!-- Screenshot Frame: Live_Recorder2.png -->
+      <div class="screenshot-frame">
+        <div class="browser-bar">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <span style="font-size: 9px; color: #64748B; margin-left: 6px; font-family: 'JetBrains Mono', monospace;">https://localhost:3000/meetings/[id]</span>
+        </div>
+        <img src="{{LIVE_RECORDER_2_IMAGE}}" alt="Meeting Health Score &amp; Synthesis" />
+      </div>
+
+      <!-- Feature Deep Dive -->
+      <div class="card-grid">
+        <div class="card highlight accent-emerald">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <h3 style="font-size: 11.5px;">📊 Dynamic Health Score (0–100)</h3>
+            <span class="pill emerald">Proprietary</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            Measures meeting effectiveness based on four key pillars: <strong>Engagement</strong> (speaker balance), <strong>Clarity</strong> (conciseness), <strong>Actionability</strong> (concrete tasks identified), and <strong>Tone</strong>.
+          </p>
+        </div>
+
+        <div class="card highlight">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <h3 style="font-size: 11.5px;">👥 Speaker Diarization</h3>
+            <span class="pill indigo">AssemblyAI</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            Every spoken sentence is attributed to individual speakers (e.g. <em>Speaker A</em>, <em>Speaker B</em>) with accurate millisecond timestamps and sentiment tagging.
+          </p>
+        </div>
+      </div>
+
+      <!-- Matrix Breakdown -->
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th>Extracted Artifact</th>
+            <th>AI Engine</th>
+            <th>Output Format</th>
+            <th>Primary Use-Case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Executive Summary</strong></td>
+            <td>Google Gemini 1.5/2.0</td>
+            <td>Structured Markdown</td>
+            <td>Quick 60-second stakeholder recap</td>
+          </tr>
+          <tr>
+            <td><strong>Action Items</strong></td>
+            <td>Gemini Structured Output</td>
+            <td>Array with Assignees &amp; Priority</td>
+            <td>Direct ingestion into Kanban Board</td>
+          </tr>
+          <tr>
+            <td><strong>Key Decisions</strong></td>
+            <td>Gemini Reasoning</td>
+            <td>Bullet consensus points</td>
+            <td>Eliminates post-meeting ambiguity</td>
+          </tr>
+          <tr>
+            <td><strong>Full Transcript</strong></td>
+            <td>AssemblyAI Diarization</td>
+            <td>Timestamped Speaker Dialogue</td>
+            <td>Compliance, audit, and keyword search</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="footer-bar">
+        <span>Step 3: Multi-Speaker Diarization &amp; Generative AI Extraction</span>
+        <span class="page-num">Page 4 of 6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 5: STEP 4 - KANBAN & COLLABORATION ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-indigo"></div>
+    <div class="page-content">
+      <div class="header-bar">
+        <div class="header-logo">
+          <span>Echoes</span> <span class="badge">AI 2.0</span>
+        </div>
+        <div class="header-tagline">Phase 4 &bull; Execution &amp; Integrations</div>
+      </div>
+
+      <div class="section-badge">Step 4 of 5</div>
+      <h2><span class="step-number">4</span> Kanban Task Board &amp; Integrations</h2>
+      <p class="subtitle">Convert conversation promises into completed deliverables with real-time velocity tracking and 1-click sync.</p>
+
+      <!-- Screenshot Frame: TaskBoard.png -->
+      <div class="screenshot-frame">
+        <div class="browser-bar">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <span style="font-size: 9px; color: #64748B; margin-left: 6px; font-family: 'JetBrains Mono', monospace;">https://localhost:3000/tasks</span>
+        </div>
+        <img src="{{TASK_BOARD_IMAGE}}" alt="Kanban Task Board" />
+      </div>
+
+      <!-- Execution Features -->
+      <div class="card-grid">
+        <div class="step-box green">
+          <div class="step-title">📌 Drag &amp; Drop Kanban Lifecycle</div>
+          <div class="step-desc">
+            Organize extracted items into <strong>To Do</strong>, <strong>In Progress</strong>, <strong>Review</strong>, and <strong>Completed</strong>. Tasks update in Supabase with instant optimistic UI feedback.
+          </div>
+        </div>
+
+        <div class="step-box cyan">
+          <div class="step-title">📅 1-Click Google Calendar Sync</div>
+          <div class="step-desc">
+            Click <strong>"Add to Calendar"</strong> to schedule follow-up deliverables directly on Google Calendar with meeting deep-links included.
+          </div>
+        </div>
+
+        <div class="step-box amber">
+          <div class="step-title">✉️ Automated Email Task Digests</div>
+          <div class="step-desc">
+            Dispatch formatted meeting digests and personalized action lists to all attendees via Nodemailer (Gmail SMTP &amp; Resend).
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-title">📄 One-Click PDF &amp; DOCX Export</div>
+          <div class="step-desc">
+            Generate pixel-perfect executive PDF summaries or editable Microsoft Word (.docx) reports ready for distribution.
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-icon">🚀</div>
+        <div class="callout-content">
+          <strong>Meeting Velocity Metric:</strong> The Task Board aggregates velocity scores across all team members, tracking how fast tasks move from "To Do" to "Completed" each sprint.
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Step 4: Task Lifecycle, Calendar Scheduling &amp; Export Automation</span>
+        <span class="page-num">Page 5 of 6</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PAGE 6: STEP 5 - MEMBER PORTAL & SECURITY ==================== -->
+  <div class="page">
+    <div class="glow-radial glow-purple"></div>
+    <div class="page-content">
+      <div class="header-bar">
+        <div class="header-logo">
+          <span>Echoes</span> <span class="badge">AI 2.0</span>
+        </div>
+        <div class="header-tagline">Phase 5 &bull; Enterprise Governance</div>
+      </div>
+
+      <div class="section-badge">Step 5 of 5</div>
+      <h2><span class="step-number">5</span> Restricted Member Portal &amp; Governance</h2>
+      <p class="subtitle">Enterprise data isolation, default "Assigned Items Only" scoping, and address-bar route protection.</p>
+
+      <!-- Screenshot Frame: MemberPortal.png -->
+      <div class="screenshot-frame">
+        <div class="browser-bar">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <span style="font-size: 9px; color: #64748B; margin-left: 6px; font-family: 'JetBrains Mono', monospace;">https://localhost:3000/ (Restricted Member Portal View)</span>
+        </div>
+        <img src="{{MEMBER_PORTAL_IMAGE}}" alt="Restricted Member Portal View" />
+      </div>
+
+      <!-- Security Grid -->
+      <div class="card-grid">
+        <div class="card highlight accent-amber">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <h3 style="font-size: 11.5px;">🔒 Default "Assigned Items Only"</h3>
+            <span class="pill amber">Strict Default</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            Every newly invited team member automatically defaults to restricted data scope. They can <strong>only</strong> see tasks and meetings explicitly assigned to them.
+          </p>
+        </div>
+
+        <div class="card highlight">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <h3 style="font-size: 11.5px;">🚫 Address Bar URL Guard</h3>
+            <span class="pill red">Guarded</span>
+          </div>
+          <p style="font-size: 10.5px; color: #94A3B8; line-height: 1.35;">
+            If a restricted teammate attempts to manually type <code>/meetings</code> or <code>/team</code> in their browser, they are instantly redirected to their clean Member Portal.
+          </p>
+        </div>
+      </div>
+
+      <!-- Access Revocation & Scope Toggle Summary -->
+      <div class="card" style="margin-bottom: 8px;">
+        <h3 style="margin-bottom: 5px; color: #FFFFFF; font-size: 11px;">👥 Workspace Owner Administrative Controls</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 10px; color: #94A3B8;">
+          <div>
+            <strong style="color: #E2E8F0;">⚡ Fluid Scope Switch:</strong> Toggle any member between <em>"Full Workspace Access"</em> and <em>"Assigned Items Only"</em> in 1 click on the <code>/team</code> page.
+          </div>
+          <div>
+            <strong style="color: #E2E8F0;">🛡️ Revoke Access Safe Retention:</strong> Revoking access instantly removes workspace login tokens while preserving historical task assignments in your directory.
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Troubleshooting Checklist -->
+      <div class="callout" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.25);">
+        <div class="callout-icon">✅</div>
+        <div class="callout-content">
+          <strong>You are all set!</strong> Start by creating a workspace, invite your team, record your next team standup, and let Echoes AI automate your meeting intelligence from start to finish.
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>Step 5: Governance, Access Scopes &amp; RLS Architecture &bull; End of Guide</span>
+        <span class="page-num">Page 6 of 6</span>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

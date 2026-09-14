@@ -5,11 +5,12 @@ import { Navbar } from '@/components/layout/Navbar';
 import { PillBadge } from '@/components/ui/PillBadge';
 import { Meeting, ActionItem, TeamMember, OrganizationMember, TaskStatus } from '@/types';
 import { 
-  User, Shield, LockKeyhole, Calendar, CheckCircle2, Clock, 
+  User, Shield, LockKeyhole, Calendar, CalendarPlus, CheckCircle2, Clock, 
   Layers, AlertTriangle, ArrowUpRight, Check, RefreshCw, Zap, Sparkles, Filter, X, Play, Pause, Volume2, FileText, MessageSquare, Download
 } from 'lucide-react';
 import { syncTaskStatusToSupabase, fetchPersonalMemberWorkspaceData } from '@/lib/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { safeParseJsonResponse } from '@/lib/api/safeFetch';
 
 interface MemberPortalViewProps {
   initialMeetings?: Meeting[];
@@ -31,6 +32,7 @@ export function MemberPortalView({
   const [orgMember, setOrgMember] = useState<OrganizationMember | undefined>(initialOrgMember);
   const [isLoading, setIsLoading] = useState(false);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'todo' | 'in_progress' | 'completed'>('all');
   const [isAccessRevoked, setIsAccessRevoked] = useState(false);
@@ -186,6 +188,59 @@ export function MemberPortalView({
       );
       setToastMessage({
         text: res.error || 'Failed to update task status in database.',
+        type: 'error',
+      });
+    }
+  };
+
+  // Sync Task to Google Calendar API
+  const handleSyncTaskToCalendar = async (task: ActionItem, meetingTitle: string) => {
+    setSyncingTaskId(task.id);
+    setToastMessage(null);
+
+    try {
+      const res = await fetch('/api/calendar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: task.title,
+          assignee: task.assignee,
+          dueDate: task.dueDate,
+          meetingTitle: meetingTitle,
+          description: `Action item assigned to ${task.assignee || 'team member'} from meeting "${meetingTitle}". Due: ${task.dueDate || 'No due date set'}. Priority: ${task.priority || 'medium'}.`,
+        }),
+      });
+
+      const parsed = await safeParseJsonResponse(res);
+      setSyncingTaskId(null);
+
+      if (res.status === 401 || parsed.data?.requiresAuth) {
+        // Redirect to Google OAuth Consent Flow with returnTo set to current URL
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/portal';
+        window.location.href = `/api/calendar/auth?returnTo=${encodeURIComponent(currentPath)}`;
+        return;
+      }
+
+      if (parsed.success && parsed.data?.success && parsed.data?.eventId) {
+        const data = parsed.data;
+        setToastMessage({
+          text: `✓ Successfully synced "${task.title}" to Google Calendar!`,
+          type: 'success',
+        });
+        setTimeout(() => setToastMessage(null), 5000);
+        if (data.htmlLink) {
+          window.open(data.htmlLink, '_blank');
+        }
+      } else {
+        setToastMessage({
+          text: `Google Calendar sync failed: ${parsed.error || parsed.data?.error || 'Unknown error'}`,
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setSyncingTaskId(null);
+      setToastMessage({
+        text: `Calendar API error: ${err.message}`,
         type: 'error',
       });
     }
@@ -439,6 +494,29 @@ export function MemberPortalView({
                         ))}
                       </div>
                     </div>
+
+                    {/* Google Calendar One-Click Sync Button */}
+                    <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => handleSyncTaskToCalendar(task, meetingTitle)}
+                        disabled={syncingTaskId === task.id}
+                        className="w-full py-2 px-3 rounded-xl bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-xs disabled:opacity-50 group cursor-pointer"
+                        title="Add this task with its due date directly to your Google Calendar"
+                      >
+                        {syncingTaskId === task.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-spin" />
+                            <span>Adding to Calendar...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CalendarPlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
+                            <span>Sync to Google Calendar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -645,9 +723,23 @@ export function MemberPortalView({
                   </h4>
                   <div className="space-y-2">
                     {selectedMeetingForDetails.actionItems.map((item) => (
-                      <div key={item.id} className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between text-xs">
-                        <span className="font-semibold text-zinc-900 dark:text-white">{item.title}</span>
-                        <span className="text-[10px] font-mono text-zinc-400">Assignee: {item.assignee || 'Unassigned'}</span>
+                      <div key={item.id} className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-zinc-900 dark:text-white truncate">{item.title}</p>
+                          <p className="text-[10px] font-mono text-zinc-400">
+                            Assignee: {item.assignee || 'Unassigned'}{item.dueDate ? ` • Due: ${item.dueDate}` : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSyncTaskToCalendar(item, selectedMeetingForDetails.title)}
+                          disabled={syncingTaskId === item.id}
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] flex items-center gap-1.5 border border-indigo-200/60 dark:border-indigo-800 flex-shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="Add to Google Calendar"
+                        >
+                          <CalendarPlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>{syncingTaskId === item.id ? 'Syncing...' : 'Add to Calendar'}</span>
+                        </button>
                       </div>
                     ))}
                   </div>
