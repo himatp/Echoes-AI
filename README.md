@@ -168,6 +168,5 @@ Echoes addresses meeting fatigue and lost action items by automatically capturin
 
 ## Known Limitations
 
-- **Row Level Security (RLS)**: Core tables enforce Supabase Auth and data scope policies; verify service role keys are never exposed on client bundles.
 - **Google OAuth Consent**: Google Sign-In and Google Calendar consent screens currently reference the default Supabase project domain (`supabase.co`) rather than a custom branded domain.
-- **Future Roadmap**: Production features such as automated error tracking (Sentry), API rate-limiting, and subscription billing tier logic are planned for future iterations.
+- **Concurrent Cross-Talk**: Extremely rapid overlapping speech (multiple speakers talking at the exact same instant) may occasionally blend diarization tags.
